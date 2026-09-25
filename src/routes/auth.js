@@ -18,11 +18,25 @@ router.post('/login', async (req, res) => {
   if(!ok) return res.status(401).json({ erro: 'E-mail ou senha incorretos.' });
   const payload = { id: user.id, nome: user.nome, email: user.email, admin: user.admin };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, usuario: payload });
+  res.json({ token, usuario: { ...payload, logo: user.logo_base64 || null } });
 });
 
-router.get('/me', autenticar, (req, res) => {
-  res.json({ usuario: req.usuario });
+router.get('/me', autenticar, async (req, res) => {
+  const { rows } = await pool.query('SELECT logo_base64 FROM users WHERE id = $1', [req.usuario.id]);
+  res.json({ usuario: { ...req.usuario, logo: rows[0] ? rows[0].logo_base64 : null } });
+});
+
+// Define/atualiza a logo de impressão do próprio usuário (qualquer usuário logado, não só admin).
+router.put('/me/logo', autenticar, async (req, res) => {
+  const { logo } = req.body || {};
+  if(logo !== null && (typeof logo !== 'string' || !logo.startsWith('data:image/'))){
+    return res.status(400).json({ erro: 'Envie uma imagem válida.' });
+  }
+  if(logo && logo.length > 700000){
+    return res.status(400).json({ erro: 'Imagem muito grande — use um arquivo menor (até ~500 KB).' });
+  }
+  await pool.query('UPDATE users SET logo_base64 = $1 WHERE id = $2', [logo, req.usuario.id]);
+  res.json({ ok: true });
 });
 
 // Lista usuários (admin) — para gestão da equipe.
