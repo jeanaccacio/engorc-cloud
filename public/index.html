@@ -240,6 +240,7 @@
       <button class="aba-btn" data-pagina="pagina-orcamento" onclick="mudarAba('pagina-orcamento')">Orçamento</button>
       <button class="aba-btn" data-pagina="pagina-cronograma" onclick="mudarAba('pagina-cronograma')">Cronograma</button>
       <button class="aba-btn" data-pagina="pagina-exportar" onclick="mudarAba('pagina-exportar')">Exportar</button>
+      <button class="aba-btn" data-pagina="pagina-conta" onclick="mudarAba('pagina-conta')">Minha Conta</button>
       <button class="aba-btn" id="abaEquipeBtn" data-pagina="pagina-equipe" onclick="mudarAba('pagina-equipe')" style="display:none;">Equipe</button>
     </div>
   </div>
@@ -417,6 +418,27 @@
         <div class="cartao-cabecalho"><h2>Sobre os dados</h2></div>
         <div class="cartao-corpo">
           <p class="obs" style="margin-top:0;">As obras ficam salvas no banco de dados compartilhado — qualquer pessoa da equipe com login vê as mesmas obras, de qualquer computador. Não é necessário backup manual.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== MINHA CONTA ===================== -->
+    <div class="pagina" id="pagina-conta">
+      <div class="cartao">
+        <div class="cartao-cabecalho"><h2>Logo de impressão</h2></div>
+        <div class="cartao-corpo">
+          <p class="obs" style="margin-top:0;">Essa imagem aparece no topo dos documentos que você imprime (BDI, Orçamento, Cronograma). Se não definir uma, é usada a logo padrão do SEINFRA.</p>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:14px;background:var(--paper);">
+            <img id="logoPreview" src="" alt="" style="max-width:100%;max-height:90px;display:none;">
+            <span id="logoPreviewVazio" style="font-size:12.5px;color:var(--muted);">Nenhuma logo pessoal definida — usando a logo padrão do SEINFRA.</span>
+          </div>
+          <input type="file" id="logoFileInput" accept="image/*" style="display:none">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn ghost" onclick="document.getElementById('logoFileInput').click()">Escolher imagem…</button>
+            <button class="btn amber" id="salvarLogoBtn" style="display:none;" onclick="salvarMinhaLogo()">Salvar logo</button>
+            <button class="btn danger" id="removerLogoBtn" style="display:none;" onclick="removerMinhaLogo()">Remover (voltar ao padrão)</button>
+          </div>
+          <p class="obs">Formatos comuns (PNG/JPG), até ~500 KB. Prefira uma imagem larga e baixa (faixa), do jeito que fica no cabeçalho impresso.</p>
         </div>
       </div>
     </div>
@@ -610,6 +632,53 @@ async function iniciarApp(){
   await carregarBaseMeta();
   await carregarObras();
   if(USUARIO.admin) await carregarEquipe();
+  atualizarPreviewLogo();
+}
+
+/* ---------------------- 3b. MINHA CONTA (logo de impressão) ---------------------- */
+let LOGO_PENDENTE = null; // dataURL escolhida mas ainda não salva
+function atualizarPreviewLogo(){
+  const img = document.getElementById('logoPreview');
+  const vazio = document.getElementById('logoPreviewVazio');
+  const src = LOGO_PENDENTE || (USUARIO && USUARIO.logo);
+  if(src){
+    img.src = src; img.style.display = 'block'; vazio.style.display = 'none';
+  }else{
+    img.style.display = 'none'; vazio.style.display = 'block';
+  }
+  document.getElementById('salvarLogoBtn').style.display = LOGO_PENDENTE ? 'inline-flex' : 'none';
+  document.getElementById('removerLogoBtn').style.display = (USUARIO && USUARIO.logo) ? 'inline-flex' : 'none';
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  const input = document.getElementById('logoFileInput');
+  if(input){
+    input.addEventListener('change', ()=>{
+      const file = input.files[0];
+      if(!file) return;
+      if(file.size > 700000){ toast('Imagem muito grande — escolha uma menor que ~500 KB.', true); return; }
+      const reader = new FileReader();
+      reader.onload = ()=>{ LOGO_PENDENTE = reader.result; atualizarPreviewLogo(); };
+      reader.readAsDataURL(file);
+    });
+  }
+});
+async function salvarMinhaLogo(){
+  if(!LOGO_PENDENTE) return;
+  try{
+    await apiFetch('/api/auth/me/logo', { method:'PUT', body: JSON.stringify({ logo: LOGO_PENDENTE }) });
+    USUARIO.logo = LOGO_PENDENTE;
+    LOGO_PENDENTE = null;
+    atualizarPreviewLogo();
+    toast('Logo salva — já vale para as próximas impressões.');
+  }catch(e){ toast('Erro ao salvar: ' + e.message, true); }
+}
+async function removerMinhaLogo(){
+  try{
+    await apiFetch('/api/auth/me/logo', { method:'PUT', body: JSON.stringify({ logo: null }) });
+    USUARIO.logo = null; LOGO_PENDENTE = null;
+    atualizarPreviewLogo();
+    toast('Logo pessoal removida — voltando ao padrão do SEINFRA.');
+  }catch(e){ toast('Erro ao remover: ' + e.message, true); }
 }
 
 /* ---------------------- 4. BASE DE DADOS (catálogo compartilhado) ---------------------- */
@@ -1060,7 +1129,8 @@ async function atualizarCronograma(grupo, mesIdx, val){
 
 /* ---------------------- 12. IMPRESSÃO OFICIAL ---------------------- */
 function cabecalhoImpressao(){
-  return `<div class="faixa-topo-logo"><img src="${LOGO_SEPLAN_BASE64}" alt="Prefeitura de Balneário Barra do Sul - SEINFRA" style="max-width:100%;height:auto;display:block;"></div>`;
+  const logo = (USUARIO && USUARIO.logo) ? USUARIO.logo : LOGO_SEPLAN_BASE64;
+  return `<div class="faixa-topo-logo"><img src="${logo}" alt="Logo" style="max-width:100%;height:auto;display:block;"></div>`;
 }
 function infoObraImpressao(){
   const o = CURRENT_OBRA;
