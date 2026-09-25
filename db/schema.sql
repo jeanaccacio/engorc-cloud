@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   ativo       BOOLEAN NOT NULL DEFAULT TRUE,
   criado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
+ALTER TABLE users ADD COLUMN IF NOT EXISTS logo_base64 TEXT;
 -- Catálogo SINAPI/SINAPI-I/SICRO/Composição/Cotação — compartilhado por toda a equipe.
 CREATE TABLE IF NOT EXISTS itens (
   id                   TEXT PRIMARY KEY,
