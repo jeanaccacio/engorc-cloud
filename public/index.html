@@ -233,17 +233,17 @@
   /* ===== IMPRESSÃO OFICIAL (padrão EngPav) ===== */
   .impressao-apenas{ display:none; }
   .doc-impressao{ background:#fff; font-family:'Inter',sans-serif; color:#000; }
-  .doc-impressao .faixa-topo-logo{ padding:6px 0 10px; border-bottom:2px solid #0B3D66; margin-bottom:6px; }
-  .doc-impressao .faixa-titulo{ background:#DCE9F5; text-align:center; font-weight:700; font-size:13px;
-    padding:6px; border:1px solid #9FC3E3; margin:10px 0; text-transform:uppercase; color:#0B3D66; }
+  .doc-impressao .faixa-topo-logo{ padding:6px 0 10px; border-bottom:2px solid var(--pr-escuro,#0B3D66); margin-bottom:6px; }
+  .doc-impressao .faixa-titulo{ background:var(--pr-claro,#DCE9F5); text-align:center; font-weight:700; font-size:13px;
+    padding:6px; border:1px solid var(--pr-borda,#9FC3E3); margin:10px 0; text-transform:uppercase; color:var(--pr-escuro,#0B3D66); }
   .doc-impressao .info-obra{ font-size:12px; margin-bottom:10px; }
   .doc-impressao .info-obra b{ display:block; font-size:13.5px; }
   .doc-impressao .linha-info{ display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; }
   .doc-impressao table{ font-size:10.5px; width:100%; border-collapse:collapse; }
-  .doc-impressao th{ background:#0B3D66; color:#fff; font-size:9px; padding:5px 4px; }
+  .doc-impressao th{ background:var(--pr-escuro,#0B3D66); color:#fff; font-size:9px; padding:5px 4px; }
   .doc-impressao td{ padding:4px; border:1px solid #ccc; }
-  .doc-impressao tr.linha-grupo td{ background:#DCE9F5; font-weight:700; text-transform:uppercase; }
-  .doc-impressao tr.linha-total-geral td{ background:#0B3D66; color:#fff; font-weight:700; }
+  .doc-impressao tr.linha-grupo td{ background:var(--pr-claro,#DCE9F5); font-weight:700; text-transform:uppercase; }
+  .doc-impressao tr.linha-total-geral td{ background:var(--pr-escuro,#0B3D66); color:#fff; font-weight:700; }
   .doc-impressao .quadro-resumo{ margin-top:16px; }
   .doc-impressao .quadro-resumo table{ width:60%; }
   .doc-impressao .observacoes{ font-size:10px; margin-top:16px; color:#333; }
@@ -251,12 +251,20 @@
   .doc-impressao .assinatura .linha{ border-top:1px solid #000; width:260px; margin:0 auto 4px; }
   .doc-impressao .bdi-quadro{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:10px; }
   .doc-impressao .bdi-quadro table{ width:100%; }
-  .doc-impressao .bdi-final-box{ background:#0B3D66; color:#fff; padding:14px; border-radius:4px; text-align:center; margin-top:14px; }
+  .doc-impressao .bdi-final-box{ background:var(--pr-escuro,#0B3D66); color:#fff; padding:14px; border-radius:4px; text-align:center; margin-top:14px; }
   .doc-impressao .bdi-final-box .v{ font-size:26px; font-weight:700; }
   .doc-impressao td.crono-celula{ text-align:center; padding:3px; font-size:9px; }
   .doc-impressao .crono-bar{ height:16px; border-radius:2px; }
-  .doc-impressao .crono-bar.ativo{ background:#2C9F52; }
-  .doc-impressao tr.crono-total-doc td{ background:#0B3D66; color:#fff; font-weight:700; }
+  .doc-impressao .crono-bar.ativo{ background:var(--pr-destaque,#2C9F52); }
+  .doc-impressao .faixa-topo-logo.compacto{ display:flex; align-items:center; gap:16px; }
+  .doc-impressao .faixa-topo-logo.compacto img{ height:92px; width:auto; max-width:45%; object-fit:contain; }
+  .doc-impressao .cab-txt{ flex:1; text-align:right; color:var(--pr-escuro,#0B3D66); line-height:1.25; }
+  .doc-impressao .cab-txt b{ display:block; font-size:15px; text-transform:uppercase; letter-spacing:.3px; }
+  .doc-impressao .cab-txt span{ font-size:11px; color:#444; }
+  .doc-impressao .cab-txt i{ display:block; height:3px; width:90px; margin:6px 0 0 auto; background:var(--pr-destaque,#2C9F52); }
+  .amostra-cor{ display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:middle; border:1px solid rgba(0,0,0,.15); }
+  .previa-doc{ margin-top:10px; border:1px solid var(--line); border-radius:6px; padding:10px; background:#fff; max-width:420px; }
+  .doc-impressao tr.crono-total-doc td{ background:var(--pr-escuro,#0B3D66); color:#fff; font-weight:700; }
 
   @media print{
     .topo, .abas, .aba-btn, .tela-apenas{ display:none !important; }
@@ -646,11 +654,19 @@
             <button class="btn amber" id="salvarLogoBtn" style="display:none;" onclick="salvarMinhaLogo()">Salvar logo</button>
             <button class="btn danger" id="removerLogoBtn" style="display:none;" onclick="removerMinhaLogo()">Remover (voltar ao padrão)</button>
           </div>
-          <p class="obs">Formatos comuns (PNG/JPG), até ~500 KB. Prefira uma imagem larga e baixa (faixa), do jeito que fica no cabeçalho impresso.</p>
+          <p class="obs">Formatos comuns (PNG/JPG), até ~500 KB. Logo em faixa larga ocupa a largura da folha; logo quadrada fica à esquerda, com o nome do órgão à direita.</p>
+        </div>
+      </div>
+      <div class="cartao">
+        <div class="cartao-cabecalho"><h2>Cores da impressão</h2></div>
+        <div class="cartao-corpo">
+          <p class="obs" style="margin-top:0;">Títulos, cabeçalhos de tabela, linhas de grupo e barras do cronograma seguem estas cores em todos os documentos (orçamento, BDI, cronograma, composições, memória de cálculo).</p>
+          <div id="coresImpressaoCorpo"></div>
         </div>
       </div>
     </div>
 
+    <!-- (cores da impressão ficam logo abaixo da logo, na Minha Conta) -->
     <!-- ===================== EQUIPE (ADMIN) ===================== -->
     <div class="pagina" id="pagina-equipe">
       <div class="cartao">
@@ -845,6 +861,7 @@ async function iniciarApp(){
   await carregarObras();
   if(USUARIO.admin) await carregarEquipe();
   atualizarPreviewLogo();
+  prepararTemaImpressao().then(renderCoresImpressao);
 }
 
 /* ---------------------- 3b. MINHA CONTA (logo de impressão) ---------------------- */
@@ -881,6 +898,7 @@ async function salvarMinhaLogo(){
     USUARIO.logo = LOGO_PENDENTE;
     LOGO_PENDENTE = null;
     atualizarPreviewLogo();
+    prepararTemaImpressao().then(renderCoresImpressao);
     toast('Logo salva — já vale para as próximas impressões.');
   }catch(e){ toast('Erro ao salvar: ' + e.message, true); }
 }
@@ -889,6 +907,7 @@ async function removerMinhaLogo(){
     await apiFetch('/api/auth/me/logo', { method:'PUT', body: JSON.stringify({ logo: null }) });
     USUARIO.logo = null; LOGO_PENDENTE = null;
     atualizarPreviewLogo();
+    prepararTemaImpressao().then(renderCoresImpressao);
     toast('Logo pessoal removida — voltando ao padrão do SEINFRA.');
   }catch(e){ toast('Erro ao remover: ' + e.message, true); }
 }
@@ -1435,8 +1454,12 @@ async function atualizarCronograma(grupo, mesIdx, val){
 
 /* ---------------------- 12. IMPRESSÃO OFICIAL ---------------------- */
 function cabecalhoImpressao(){
-  const logo = (USUARIO && USUARIO.logo) ? USUARIO.logo : LOGO_SEPLAN_BASE64;
-  return `<div class="faixa-topo-logo"><img src="${logo}" alt="Logo" style="max-width:100%;height:auto;display:block;"></div>`;
+  const logo = logoImpressao();
+  if(logoEhFaixa()) return `<div class="faixa-topo-logo"><img src="${logo}" alt="Logo" style="max-width:100%;height:auto;display:block;"></div>`;
+  // logo quadrada/retangular: fica à esquerda, com órgão e município à direita (não ocupa meia página)
+  const o = CURRENT_OBRA || {};
+  return `<div class="faixa-topo-logo compacto"><img src="${logo}" alt="Logo">
+    <div class="cab-txt"><b>${escH(o.orgao || '')}</b><span>${escH(o.municipio || '')}</span><i></i></div></div>`;
 }
 function infoObraImpressao(){
   const o = CURRENT_OBRA;
@@ -1451,6 +1474,7 @@ function infoObraImpressao(){
   </div>`;
 }
 function dispararImpressao(html){
+  aplicarTemaImpressao(document.getElementById('areaImpressao'));
   document.getElementById('areaImpressao').innerHTML = html;
   document.getElementById('areaImpressao').classList.add('doc-ativo');
   setTimeout(()=>{ window.print(); }, 60);

@@ -1403,3 +1403,138 @@ function calcularBdiDe(o){
   b.final = I < 1 ? ((1+b.ac+b.sg+b.r)*(1+b.df)*(1+b.l)/(1-I)) - 1 : 0;
   return b.final;
 }
+
+/* =====================================================================
+   6. TEMA DA IMPRESSÃO — cores tiradas da logo do usuário (ou escolhidas por ele)
+   ===================================================================== */
+const TEMA_PADRAO_IMPRESSAO = { escuro:'#0B3D66', claro:'#DCE9F5', borda:'#9FC3E3', destaque:'#2C9F52' }; // logo padrão SEINFRA (azul)
+let TEMA_LOGO = { src:null, tema:null, ratio:null, cores:null };
+function hexRgb(h){ h = h.replace('#',''); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]; }
+function rgbHex(r,g,b){ return '#' + [r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('').toUpperCase(); }
+function rgbHsl(r,g,b){ r/=255; g/=255; b/=255; const mx=Math.max(r,g,b), mn=Math.min(r,g,b); let h=0, s=0; const l=(mx+mn)/2;
+  if(mx!==mn){ const d=mx-mn; s = l>0.5 ? d/(2-mx-mn) : d/(mx+mn);
+    h = mx===r ? (g-b)/d+(g<b?6:0) : mx===g ? (b-r)/d+2 : (r-g)/d+4; h*=60; } return [h,s,l]; }
+function hslRgb(h,s,l){ h/=360; if(s===0) return [l*255,l*255,l*255];
+  const q = l<0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+  const f = t=>{ if(t<0) t+=1; if(t>1) t-=1; if(t<1/6) return p+(q-p)*6*t; if(t<1/2) return q; if(t<2/3) return p+(q-p)*(2/3-t)*6; return p; };
+  return [f(h+1/3)*255, f(h)*255, f(h-1/3)*255]; }
+function misturar(hex, alvo, t){ const a = hexRgb(hex), b = hexRgb(alvo); return rgbHex(a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t); }
+// Monta o tema a partir de 2 cores: a principal vira um tom escuro (cabeçalhos com texto branco legível).
+function temaDeCores(principal, destaque){
+  const [h,s,l] = rgbHsl(...hexRgb(principal));
+  const escuro = l > 0.30 ? rgbHex(...hslRgb(h, Math.min(1, s*1.05), 0.27)) : principal.toUpperCase();
+  // tons claros no mesmo matiz (não acinzentados), para faixas de título e linhas de grupo
+  // usa o matiz do destaque quando ele é colorido (ex.: verde-limão da JRA), senão o da cor principal
+  const [hd, sd] = rgbHsl(...hexRgb(destaque));
+  const [hh, ss] = sd >= 0.3 ? [hd, sd] : [h, s];
+  const sc = ss < 0.08 ? 0 : Math.min(0.6, Math.max(0.35, ss));
+  return { escuro, claro: rgbHex(...hslRgb(hh, sc, 0.915)), borda: rgbHex(...hslRgb(hh, sc*0.8, 0.72)), destaque: destaque.toUpperCase() };
+}
+// Lê os pixels da logo e acha as cores da marca (ignora branco, preto e cinzas).
+function analisarLogo(src){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const esc = Math.min(1, 240/Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width*esc)); c.height = Math.max(1, Math.round(img.height*esc));
+        const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        const B = Array.from({length:24}, ()=>({ n:0, r:0, g:0, b:0, h:0 }));
+        let total = 0;
+        for(let i=0;i<d.length;i+=4){
+          if(d[i+3] < 128) continue;
+          const [h,s,l] = rgbHsl(d[i],d[i+1],d[i+2]);
+          if(l > 0.92 || l < 0.05 || s < 0.20) continue;
+          const k = Math.floor(h/15) % 24; const x = B[k];
+          x.n++; x.r+=d[i]; x.g+=d[i+1]; x.b+=d[i+2]; x.h+=h; total++;
+        }
+        // recorta as margens brancas/transparentes da logo (para o cabeçalho não ficar com a marca pequena)
+        let x0=c.width, y0=c.height, x1=-1, y1=-1;
+        for(let y=0;y<c.height;y++) for(let x=0;x<c.width;x++){
+          const i = (y*c.width+x)*4;
+          if(d[i+3] > 20 && (d[i] < 232 || d[i+1] < 232 || d[i+2] < 232)){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+        }
+        let recortada = src, ratio = img.width / img.height;
+        if(x1 > x0 && y1 > y0){
+          const k = 1/esc, pad = 4;
+          const sx = Math.max(0, Math.floor((x0-pad)*k)), sy = Math.max(0, Math.floor((y0-pad)*k));
+          const sw = Math.min(img.width - sx, Math.ceil((x1-x0+2*pad)*k)), sh = Math.min(img.height - sy, Math.ceil((y1-y0+2*pad)*k));
+          if(sw*sh < img.width*img.height*0.92){
+            const c2 = document.createElement('canvas'); c2.width = sw; c2.height = sh;
+            c2.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+            recortada = c2.toDataURL('image/png'); ratio = sw/sh;
+          }
+        }
+        if(total < 30){ resolve({ ratio, cores:null, recortada }); return; }
+        const ord = B.map((x,k)=>({ ...x, k })).filter(x=>x.n).sort((a,b)=>b.n-a.n);
+        const cor = x=>rgbHex(x.r/x.n, x.g/x.n, x.b/x.n);
+        const principal = ord[0];
+        const dist = (a,b)=>{ const da = Math.abs(a.h/a.n - b.h/b.n); return Math.min(da, 360-da); };
+        const outra = ord.slice(1).find(x=>x.n >= total*0.04 && dist(x, principal) >= 25);
+        let destaque;
+        if(outra) destaque = cor(outra);
+        else{ const [h,s] = rgbHsl(...hexRgb(cor(principal))); destaque = rgbHex(...hslRgb(h, Math.max(0.55, s), 0.45)); }
+        // a principal é a cor mais presente; se o destaque for mais escuro, troca (cabeçalho precisa do tom escuro)
+        let p = cor(principal), dq = destaque;
+        if(rgbHsl(...hexRgb(dq))[2] < rgbHsl(...hexRgb(p))[2] - 0.15){ const t = p; p = dq; dq = t; }
+        resolve({ ratio, cores:{ principal:p, destaque:dq }, recortada });
+      }catch(e){ resolve({ ratio: img.width/img.height, cores:null, recortada:src }); }
+    };
+    img.onerror = ()=>resolve({ ratio:null, cores:null });
+    img.src = src;
+  });
+}
+async function prepararTemaImpressao(){
+  const src = USUARIO && USUARIO.logo;
+  if(!src){ TEMA_LOGO = { src:null, tema:null, ratio:5, cores:null }; return; }
+  if(TEMA_LOGO.src === src && TEMA_LOGO.ratio) return;
+  const r = await analisarLogo(src);
+  TEMA_LOGO = { src, ratio: r.ratio, cores: r.cores, recortada: r.recortada || src, tema: r.cores ? temaDeCores(r.cores.principal, r.cores.destaque) : null };
+}
+function temaImpressaoAtual(){
+  const m = USUARIO && USUARIO.coresImpressao;
+  if(m && m.principal && m.destaque) return temaDeCores(m.principal, m.destaque);
+  if(USUARIO && USUARIO.logo && TEMA_LOGO.src === USUARIO.logo && TEMA_LOGO.tema) return TEMA_LOGO.tema;
+  return TEMA_PADRAO_IMPRESSAO;
+}
+function aplicarTemaImpressao(el){
+  const t = temaImpressaoAtual();
+  el.style.setProperty('--pr-escuro', t.escuro); el.style.setProperty('--pr-claro', t.claro);
+  el.style.setProperty('--pr-borda', t.borda); el.style.setProperty('--pr-destaque', t.destaque);
+}
+function logoImpressao(){ return (USUARIO && USUARIO.logo) ? ((TEMA_LOGO.src === USUARIO.logo && TEMA_LOGO.recortada) || USUARIO.logo) : LOGO_SEPLAN_BASE64; }
+function logoEhFaixa(){ return !(USUARIO && USUARIO.logo) || !TEMA_LOGO.ratio || TEMA_LOGO.ratio >= 2.8; }
+
+/* ---------- Minha Conta: cores da impressão ---------- */
+let CORES_PENDENTES = undefined; // undefined = sem alteração; null = automáticas; {principal,destaque} = personalizadas
+function renderCoresImpressao(){
+  const box = document.getElementById('coresImpressaoCorpo'); if(!box || !USUARIO) return;
+  const salvas = USUARIO.coresImpressao || null;
+  const atual = CORES_PENDENTES !== undefined ? CORES_PENDENTES : salvas;
+  const auto = !atual;
+  const base = atual || TEMA_LOGO.cores || { principal: TEMA_PADRAO_IMPRESSAO.escuro, destaque: TEMA_PADRAO_IMPRESSAO.destaque };
+  const t = auto ? temaImpressaoAtual() : temaDeCores(base.principal, base.destaque);
+  box.innerHTML = `
+    <label class="pav-chk"><input type="radio" name="corModo" ${auto?'checked':''} onchange="CORES_PENDENTES=null;renderCoresImpressao()"> Automáticas — tiradas da logo${USUARIO.logo ? (TEMA_LOGO.cores ? ` (encontradas: <span class="amostra-cor" style="background:${TEMA_LOGO.cores.principal}"></span> <span class="amostra-cor" style="background:${TEMA_LOGO.cores.destaque}"></span>)` : ' (a logo não tem cores marcantes — usando o padrão azul)') : ' (sem logo pessoal — padrão azul do SEINFRA)'}</label>
+    <label class="pav-chk"><input type="radio" name="corModo" ${!auto?'checked':''} onchange="CORES_PENDENTES={principal:'${base.principal}',destaque:'${base.destaque}'};renderCoresImpressao()"> Escolher as cores</label>
+    ${!auto ? `<div class="linha-dupla" style="max-width:420px;margin-top:6px;">
+      <div class="campo"><label>Cor principal</label><input type="color" value="${base.principal}" oninput="CORES_PENDENTES={principal:this.value,destaque:(CORES_PENDENTES||{}).destaque||'${base.destaque}'};renderCoresImpressao()"></div>
+      <div class="campo"><label>Cor de destaque</label><input type="color" value="${base.destaque}" oninput="CORES_PENDENTES={principal:(CORES_PENDENTES||{}).principal||'${base.principal}',destaque:this.value};renderCoresImpressao()"></div></div>` : ''}
+    <div class="previa-doc">
+      <div style="border-bottom:2px solid ${t.escuro};padding-bottom:4px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+        ${USUARIO.logo ? `<img src="${USUARIO.logo}" style="height:34px;">` : '<span style="font-size:10px;color:#666">logo SEINFRA</span>'}</div>
+      <div style="background:${t.claro};border:1px solid ${t.borda};color:${t.escuro};text-align:center;font-weight:700;font-size:10px;padding:3px;">ORÇAMENTO</div>
+      <table style="margin-top:6px;font-size:9px;"><tr><th style="background:${t.escuro};color:#fff;padding:3px;">ITEM</th><th style="background:${t.escuro};color:#fff;padding:3px;">DESCRIÇÃO</th><th style="background:${t.escuro};color:#fff;padding:3px;">TOTAL</th></tr>
+        <tr><td style="background:${t.claro};font-weight:700;padding:3px;">1</td><td style="background:${t.claro};font-weight:700;padding:3px;">PAVIMENTAÇÃO</td><td style="background:${t.claro};padding:3px;">R$ 100.000,00</td></tr>
+        <tr><td style="padding:3px;">1.1</td><td style="padding:3px;">Cronograma <span style="display:inline-block;width:60px;height:8px;background:${t.destaque};border-radius:2px;"></span></td><td style="padding:3px;">R$ 50.000,00</td></tr></table>
+    </div>
+    ${CORES_PENDENTES !== undefined ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn amber fino" onclick="salvarCoresImpressao()">Salvar cores</button><button class="btn ghost fino" onclick="CORES_PENDENTES=undefined;renderCoresImpressao()">Cancelar</button></div>` : ''}`;
+}
+async function salvarCoresImpressao(){
+  try{
+    await apiFetch('/api/auth/me/cores', { method:'PUT', body: JSON.stringify({ cores: CORES_PENDENTES || null }) });
+    USUARIO.coresImpressao = CORES_PENDENTES || null; CORES_PENDENTES = undefined;
+    renderCoresImpressao(); toast('Cores da impressão salvas.');
+  }catch(e){ toast('Erro ao salvar as cores: ' + e.message, true); }
+}
