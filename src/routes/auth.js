@@ -18,12 +18,12 @@ router.post('/login', async (req, res) => {
   if(!ok) return res.status(401).json({ erro: 'E-mail ou senha incorretos.' });
   const payload = { id: user.id, nome: user.nome, email: user.email, admin: user.admin };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, usuario: { ...payload, logo: user.logo_base64 || null } });
+  res.json({ token, usuario: { ...payload, logo: user.logo_base64 || null, coresImpressao: user.cores_impressao || null } });
 });
 
 router.get('/me', autenticar, async (req, res) => {
-  const { rows } = await pool.query('SELECT logo_base64 FROM users WHERE id = $1', [req.usuario.id]);
-  res.json({ usuario: { ...req.usuario, logo: rows[0] ? rows[0].logo_base64 : null } });
+  const { rows } = await pool.query('SELECT logo_base64, cores_impressao FROM users WHERE id = $1', [req.usuario.id]);
+  res.json({ usuario: { ...req.usuario, logo: rows[0] ? rows[0].logo_base64 : null, coresImpressao: rows[0] ? rows[0].cores_impressao : null } });
 });
 
 // Define/atualiza a logo de impressão do próprio usuário (qualquer usuário logado, não só admin).
@@ -36,6 +36,17 @@ router.put('/me/logo', autenticar, async (req, res) => {
     return res.status(400).json({ erro: 'Imagem muito grande — use um arquivo menor (até ~500 KB).' });
   }
   await pool.query('UPDATE users SET logo_base64 = $1 WHERE id = $2', [logo, req.usuario.id]);
+  res.json({ ok: true });
+});
+
+// Cores da impressão do próprio usuário: null = automáticas (tiradas da logo); ou { principal, destaque } em #RRGGBB.
+router.put('/me/cores', autenticar, async (req, res) => {
+  const { cores } = req.body || {};
+  const hex = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+  if(cores !== null && !(cores && hex(cores.principal) && hex(cores.destaque))){
+    return res.status(400).json({ erro: 'Cores inválidas.' });
+  }
+  await pool.query('UPDATE users SET cores_impressao = $1 WHERE id = $2', [cores ? JSON.stringify({ principal: cores.principal, destaque: cores.destaque }) : null, req.usuario.id]);
   res.json({ ok: true });
 });
 
