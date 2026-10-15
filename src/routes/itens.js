@@ -25,6 +25,62 @@ router.get('/buscar', autenticar, async (req, res) => {
   res.json({ itens: rows });
 });
 
+const COLS = `id, fonte, codigo, descricao, unidade, custo_desonerado AS "custoDesonerado", custo_nao_desonerado AS "custoNaoDesonerado"`;
+
+// Busca vários itens pelo código (usado pelo motor de pavimentação e pela importação de obras/composições).
+// Body: { codigos:[...], fontes:[...opcional, em ordem de preferência] }. Retorna também os não encontrados.
+router.post('/por-codigos', autenticar, async (req, res) => {
+  const codigos = Array.from(new Set(((req.body && req.body.codigos) || []).map(c => String(c).trim()).filter(Boolean))).slice(0, 2000);
+  const fontes = ((req.body && req.body.fontes) || []).map(String);
+  if(!codigos.length) return res.json({ itens: [], naoEncontrados: [] });
+  const params = [codigos];
+  let sql = `SELECT ${COLS} FROM itens WHERE codigo = ANY($1)`;
+  if(fontes.length){ sql += ' AND fonte = ANY($2)'; params.push(fontes); }
+  const { rows } = await pool.query(sql, params);
+  // Um mesmo código pode existir em mais de uma fonte: escolhe pela ordem de preferência informada.
+  const ordem = f => { const i = fontes.indexOf(f); return i === -1 ? 99 : i; };
+  const porCodigo = {};
+  rows.forEach(r => { const atual = porCodigo[r.codigo]; if(!atual || ordem(r.fonte) < ordem(atual.fonte)) porCodigo[r.codigo] = r; });
+  res.json({ itens: Object.values(porCodigo), naoEncontrados: codigos.filter(c => !porCodigo[c]) });
+});
+
+// Busca itens pelo id interno ("SINAPI 95995", "Própria C001"...).
+router.post('/por-ids', autenticar, async (req, res) => {
+  const ids = Array.from(new Set(((req.body && req.body.ids) || []).map(String))).slice(0, 2000);
+  if(!ids.length) return res.json({ itens: [] });
+  const { rows } = await pool.query(`SELECT ${COLS} FROM itens WHERE id = ANY($1)`, [ids]);
+  res.json({ itens: rows });
+});
+
+// Cria/atualiza um item próprio da equipe (composição própria fora do SINAPI, ex.: C001).
+// Fica no catálogo compartilhado com fonte "Própria" e NÃO é apagado quando a base SINAPI é reimportada.
+router.post('/propria', autenticar, async (req, res) => {
+  const b = req.body || {};
+  const codigo = String(b.codigo || '').trim();
+  const descricao = String(b.descricao || '').trim();
+  const unidade = String(b.unidade || '').trim();
+  if(!codigo || !descricao || !unidade) return res.status(400).json({ erro: 'Informe código, descrição e unidade.' });
+  const custo = Math.max(0, parseFloat(b.custo) || 0);
+  const custoD = b.custoDesonerado != null ? Math.max(0, parseFloat(b.custoDesonerado) || 0) : custo;
+  const custoN = b.custoNaoDesonerado != null ? Math.max(0, parseFloat(b.custoNaoDesonerado) || 0) : custo;
+  const id = 'Própria ' + codigo;
+  await pool.query(
+    `INSERT INTO itens (id, fonte, codigo, descricao, unidade, custo_desonerado, custo_nao_desonerado) VALUES ($1,'Própria',$2,$3,$4,$5,$6)
+     ON CONFLICT (id) DO UPDATE SET descricao=EXCLUDED.descricao, unidade=EXCLUDED.unidade,
+       custo_desonerado=EXCLUDED.custo_desonerado, custo_nao_desonerado=EXCLUDED.custo_nao_desonerado`,
+    [id, codigo, descricao, unidade, custoD, custoN]
+  );
+  const { rows } = await pool.query(`SELECT ${COLS} FROM itens WHERE id = $1`, [id]);
+  res.json({ item: rows[0] });
+});
+
+router.delete('/propria/:codigo', autenticar, async (req, res) => {
+  const id = 'Própria ' + String(req.params.codigo).trim();
+  await pool.query(`DELETE FROM itens WHERE id = $1 AND fonte = 'Própria'`, [id]);
+  await pool.query('DELETE FROM composicoes WHERE item_id = $1', [id]);
+  res.json({ ok: true });
+});
+
 // Estatísticas do catálogo (para a tela "Base de dados").
 router.get('/meta', autenticar, async (req, res) => {
   const total = await pool.query('SELECT COUNT(*)::int AS total FROM itens');
@@ -55,7 +111,8 @@ router.post('/importar', autenticar, exigirAdmin, upload.single('arquivo'), asyn
   const client = await pool.connect();
   try{
     await client.query('BEGIN');
-    await client.query('TRUNCATE itens');
+    // Itens próprios da equipe (fonte "Própria") são preservados — só a base de referência é substituída.
+    await client.query("DELETE FROM itens WHERE fonte <> 'Própria'");
     const BATCH = 1000;
     for(let i = 0; i < itens.length; i += BATCH){
       const lote = itens.slice(i, i + BATCH);
