@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   ativo       BOOLEAN NOT NULL DEFAULT TRUE,
   criado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE users ADD COLUMN IF NOT EXISTS logo_base64 TEXT;
+
 -- Catálogo SINAPI/SINAPI-I/SICRO/Composição/Cotação — compartilhado por toda a equipe.
 CREATE TABLE IF NOT EXISTS itens (
   id                   TEXT PRIMARY KEY,
@@ -55,4 +55,17 @@ CREATE TABLE IF NOT EXISTS obras (
   criado_por_nome TEXT,
   criado_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
   atualizado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ===== v2 (integração EngPav) — aditivo, não altera dados existentes =====
+-- Dados extras da obra: módulo de pavimentação (segmentos), convênio, ART, versão do formato.
+ALTER TABLE obras ADD COLUMN IF NOT EXISTS extras JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Composições analíticas (insumos × coeficiente) — compartilhadas pela equipe, uma por item do catálogo.
+CREATE TABLE IF NOT EXISTS composicoes (
+  item_id         TEXT PRIMARY KEY,
+  linhas          JSONB NOT NULL DEFAULT '[]'::jsonb,
+  observacao      TEXT,
+  atualizado_por  TEXT,
+  atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
