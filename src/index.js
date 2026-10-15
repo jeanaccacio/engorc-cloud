@@ -7,14 +7,16 @@ const { aplicarSchema } = require('../db');
 const authRoutes = require('./routes/auth');
 const itensRoutes = require('./routes/itens');
 const obrasRoutes = require('./routes/obras');
+const composicoesRoutes = require('./routes/composicoes');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/itens', itensRoutes);
 app.use('/api/obras', obrasRoutes);
+app.use('/api/composicoes', composicoesRoutes);
 
 app.get('/api/saude', (req, res) => res.json({ ok: true }));
 
