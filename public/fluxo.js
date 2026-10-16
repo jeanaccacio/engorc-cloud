@@ -123,9 +123,48 @@ async function novaObraDoPainel(){
   mudarAba('pagina-obra');
 }
 
+/* ---------------------- PERFIS DE ACESSO ----------------------
+   editor          = equipe técnica (tudo)
+   acompanhamento  = vê o Painel e o Acompanhamento; marca checklist, datas e fase (salva só o acompanhamento)
+   visualizador    = vê o Painel e o Acompanhamento, sem alterar nada
+   O servidor também bloqueia (não é só a tela). */
+const PERFIS_LABEL = { editor:'Equipe técnica', acompanhamento:'Acompanhamento', visualizador:'Consulta' };
+const ABAS_RESTRITO = ['pagina-painel', 'pagina-acompanhamento', 'pagina-conta'];
+function perfilUsuario(){ return !USUARIO ? 'editor' : (USUARIO.admin ? 'editor' : (PERFIS_LABEL[USUARIO.perfil] ? USUARIO.perfil : 'editor')); }
+function podeEditar(){ return perfilUsuario() === 'editor'; }
+function podeChecklist(){ return perfilUsuario() !== 'visualizador'; }
+function aplicarPerfilNaTela(){
+  const restrito = !podeEditar();
+  document.body.classList.toggle('perfil-restrito', restrito);
+  document.querySelectorAll('.aba-btn').forEach(b=>{
+    if(b.id === 'abaEquipeBtn') return;
+    b.style.display = (!restrito || ABAS_RESTRITO.includes(b.dataset.pagina)) ? '' : 'none';
+  });
+  // Minha Conta: perfis restritos não imprimem, então logo/cores não interessam
+  const conta = document.getElementById('pagina-conta');
+  if(conta) conta.querySelectorAll('.cartao').forEach(c=>{ c.style.display = restrito ? 'none' : ''; });
+  const av = document.getElementById('contaRestritoAviso'); if(av) av.remove();
+  if(restrito && conta){
+    conta.insertAdjacentHTML('afterbegin', `<div class="cartao" id="contaRestritoAviso" style="display:block !important;"><div class="cartao-corpo"><b>Seu acesso: ${escH(PERFIS_LABEL[perfilUsuario()])}.</b>
+      <p class="obs" style="margin-bottom:0;">${perfilUsuario()==='acompanhamento' ? 'Você vê o painel de obras e pode marcar o checklist, as datas e a fase de cada obra.' : 'Você pode consultar o painel de obras e o checklist de cada obra.'} Orçamentos, BDI e valores são alterados só pela equipe técnica. Para mudar seu acesso, fale com o administrador.</p></div></div>`);
+  }
+}
+// Perfil "acompanhamento": grava só o acompanhamento da obra (rota própria no servidor).
+async function salvarFluxoAtual(silencioso){
+  const o = CURRENT_OBRA; if(!o || !podeChecklist()) return;
+  try{
+    const f = fluxoGarantir(o);
+    const r = await apiFetch('/api/obras/' + o.id + '/fluxo', { method:'PUT', body: JSON.stringify({ fluxo: f }) });
+    const idx = OBRAS.findIndex(x=>x.id===o.id);
+    if(idx >= 0) OBRAS[idx] = { ...OBRAS[idx], fluxo: f, atualizadoEm: r.atualizadoEm };
+    document.getElementById('statusSync').textContent = 'Acompanhamento salvo às ' + new Date().toLocaleTimeString('pt-BR');
+    if(silencioso !== true) toast('Acompanhamento salvo.');
+  }catch(e){ toast('Não foi possível salvar: ' + e.message, true); }
+}
+
 /* ---------------------- ACOMPANHAMENTO DA OBRA ATUAL ---------------------- */
 let _fluxoTimer = null;
-function fluxoAgendarSalvar(){ clearTimeout(_fluxoTimer); _fluxoTimer = setTimeout(()=>salvarObraAtual(true), 600); }
+function fluxoAgendarSalvar(){ if(!podeChecklist()) return; clearTimeout(_fluxoTimer); _fluxoTimer = setTimeout(()=>salvarObraAtual(true), 600); }
 function fluxoCampo(campo, valor){
   const f = fluxoGarantir(CURRENT_OBRA);
   f[campo] = valor;
@@ -198,9 +237,9 @@ function renderAcompanhamento(){
     <div class="linha-tripla">
       <div class="campo"><label>Tipo</label><select onchange="fluxoCampo('tipo', this.value)">${TIPOS_FLUXO.map(t=>`<option ${t===f.tipo?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="campo"><label>Local / endereço</label><input type="text" value="${escH(f.local||'')}" placeholder="Bairro, rua, referência" onchange="fluxoCampo('local', this.value.trim())"></div>
-      <div class="campo"><label>Responsável · fonte de recurso</label><div class="campo-lido" onclick="mudarAba('pagina-obra')" title="Editar na aba Obra">${escH(o.responsavel||'—')} · ${escH(convenioTexto()||'fonte não informada')}</div></div>
+      <div class="campo"><label>Responsável · fonte de recurso</label><div class="campo-lido" ${podeEditar() ? `onclick="mudarAba('pagina-obra')" title="Editar na aba Obra"` : ''}>${escH(o.responsavel||'—')} · ${escH(convenioTexto()||'fonte não informada')}</div></div>
     </div>
-    <div class="linha-tripla">
+    <div class="linha-tripla" style="${podeEditar() ? '' : 'display:none;'}">
       <div class="campo"><label>Valor do orçamento informado (R$, c/ BDI) — para obra orçada fora do sistema</label>
         <input type="text" inputmode="decimal" value="${num(o.extras&&o.extras.valorInformado)>0 ? num(o.extras.valorInformado).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : ''}" placeholder="ex.: 1.250.000,00" onchange="acompValorInformado(this.value)">
         <p class="obs">${o.itens.length ? 'Esta obra tem orçamento no sistema (' + fmtMoney(o.itens.reduce((s,i)=>s+num(i.custoTotal),0)) + ') — ele prevalece sobre o valor informado.' : 'Entra no total do Painel enquanto a obra estiver em andamento.'}</p></div>
@@ -220,7 +259,13 @@ function renderAcompanhamento(){
       <button class="btn ghost fino" onclick="fluxoAdicionarItem()">Adicionar</button>
       ${idxFase < FASES.length-1 ? `<button class="btn amber fino" onclick="fluxoAvancarFase()">Avançar para "${escH(FASES[idxFase+1].label)}" →</button>` : ''}
     </div>`;
+  if(!podeChecklist()){   // perfil Consulta: só visualiza (abas das fases continuam navegáveis)
+    cont.querySelectorAll('input, select, textarea, button').forEach(el=>{ if(!el.classList.contains('fase-aba')) el.disabled = true; });
+    cont.querySelectorAll('.rm-btn, #fluxoNovoItem').forEach(el=>{ el.style.display = 'none'; });
+    cont.querySelectorAll('.btn').forEach(el=>{ el.style.display = 'none'; });
+  }
 }
+
 async function excluirObraAtual(){
   const o = CURRENT_OBRA; if(!o) return;
   const nome = prompt(`Excluir a obra "${o.nome}" com orçamento, trechos e acompanhamento?\nEsta ação não pode ser desfeita.\n\nDigite EXCLUIR para confirmar:`);

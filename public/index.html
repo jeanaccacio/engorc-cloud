@@ -171,6 +171,7 @@
   .seg-itens summary{ cursor:pointer; color:var(--ink-3); font-weight:600; }
   .pav-chk{ display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0; cursor:pointer; font-weight:500; color:var(--ink-text); }
   .pav-chk input{ width:auto !important; margin:0; }
+  body.perfil-restrito .so-editor{ display:none !important; }
   .sit-ok{ color:var(--green-ok); font-weight:700; font-size:11.5px; }
   .sit-fora{ color:#B3261E; font-weight:700; font-size:11.5px; }
   .bdi-tab td, .bdi-tab th{ font-size:12px; }
@@ -308,10 +309,10 @@
     </div>
     <div class="obra-linha">
       <select id="obraSelect"></select>
-      <button class="btn-topo destaque" onclick="salvarObraAtual()">💾 Salvar</button>
+      <button class="btn-topo destaque so-editor" onclick="salvarObraAtual()">💾 Salvar</button>
       <button class="btn-topo" onclick="atualizarDoServidor()">🔄 Atualizar</button>
-      <button class="btn-topo" onclick="criarNovaObra()">🆕 Nova obra</button>
-      <button class="btn-topo" onclick="document.getElementById('importObraInput').click()" title="Trazer obras salvas do EngPav, do EngOrc ou do EngFluxo antigo (.html / .json — pode selecionar vários .json do EngFluxo)">📂 Importar obra</button>
+      <button class="btn-topo so-editor" onclick="criarNovaObra()">🆕 Nova obra</button>
+      <button class="btn-topo so-editor" onclick="document.getElementById('importObraInput').click()" title="Trazer obras salvas do EngPav, do EngOrc ou do EngFluxo antigo (.html / .json — pode selecionar vários .json do EngFluxo)">📂 Importar obra</button>
       <input type="file" id="importObraInput" accept=".html,.htm,.json" multiple style="display:none" onchange="lerArquivoImportacao(this)">
       <span class="status-base" id="statusBase">Base: —</span>
     </div>
@@ -345,7 +346,7 @@
     <div class="pagina ativa" id="pagina-painel">
       <div class="cartao">
         <div class="cartao-cabecalho"><h2>Painel geral de obras e projetos</h2>
-          <button class="btn amber fino" onclick="novaObraDoPainel()">+ Nova obra</button></div>
+          <button class="btn amber fino so-editor" onclick="novaObraDoPainel()">+ Nova obra</button></div>
         <div class="cartao-corpo">
           <div class="totais-barra" id="painelResumo" style="margin-top:0;justify-content:flex-start;"></div>
           <div class="filtros-painel">
@@ -660,8 +661,13 @@
             <div class="campo"><label>E-mail</label><input type="email" id="eq_email"></div>
             <div class="campo"><label>Senha provisória</label><input type="text" id="eq_senha"></div>
           </div>
-          <div class="campo" style="max-width:220px;">
-            <label><input type="checkbox" id="eq_admin" style="width:auto;margin-right:6px;">Também é administrador</label>
+          <div class="linha-tripla">
+            <div class="campo"><label>Tipo de acesso</label><select id="eq_perfil">
+              <option value="editor">Equipe técnica — acesso completo</option>
+              <option value="acompanhamento">Acompanhamento — vê o painel e marca o checklist</option>
+              <option value="visualizador">Consulta — só vê o painel e o checklist</option></select>
+              <p class="obs">Acompanhamento e Consulta não veem nem alteram orçamento, BDI, valores, bases ou composições.</p></div>
+            <div class="campo"><label>&nbsp;</label><label><input type="checkbox" id="eq_admin" style="width:auto;margin-right:6px;" onchange="if(this.checked) document.getElementById('eq_perfil').value='editor'; document.getElementById('eq_perfil').disabled=this.checked;">Também é administrador</label></div>
           </div>
           <button class="btn amber" onclick="criarUsuario()">Adicionar</button>
         </div>
@@ -669,7 +675,7 @@
       <div class="cartao">
         <div class="cartao-cabecalho"><h2>Pessoas com acesso</h2></div>
         <div class="cartao-corpo">
-          <div style="overflow-x:auto;"><table id="equipeTable"><thead><tr><th>Nome</th><th>E-mail</th><th>Admin</th><th>Ativo</th><th></th></tr></thead><tbody id="equipeBody"></tbody></table></div>
+          <div style="overflow-x:auto;"><table id="equipeTable"><thead><tr><th>Nome</th><th>E-mail</th><th>Acesso</th><th>Admin</th><th>Ativo</th><th></th></tr></thead><tbody id="equipeBody"></tbody></table></div>
         </div>
       </div>
     </div>
@@ -832,7 +838,8 @@ async function init(){
 }
 
 async function iniciarApp(){
-  document.getElementById('usuarioLogado').textContent = USUARIO.nome + (USUARIO.admin ? ' (admin)' : '');
+  document.getElementById('usuarioLogado').textContent = USUARIO.nome + (USUARIO.admin ? ' (admin)' : (perfilUsuario() !== 'editor' ? ' (' + PERFIS_LABEL[perfilUsuario()].toLowerCase() + ')' : ''));
+  aplicarPerfilNaTela();
   if(USUARIO.admin){
     document.getElementById('zonaExcluirObra').style.display = '';
     document.getElementById('abaEquipeBtn').style.display = '';
@@ -947,6 +954,7 @@ async function carregarObras(){
   const r = await apiFetch('/api/obras');
   OBRAS = r.obras;
   if(OBRAS.length === 0){
+    if(!podeEditar()){ popularObraSelect(); popularFiltroFases(); renderPainel(); return; }
     await criarNovaObra(true);
     return;
   }
@@ -1014,6 +1022,7 @@ function capturarCamposObraDaTela(){
   calcularBDI();
 }
 async function salvarObraAtual(silencioso){
+  if(!podeEditar()){ if(podeChecklist()) return salvarFluxoAtual(silencioso); return; }   // perfis restritos não alteram orçamento/valores
   capturarCamposObraDaTela();
   try{
     const r = await apiFetch('/api/obras/' + CURRENT_OBRA.id, { method:'PUT', body: JSON.stringify(CURRENT_OBRA) });
@@ -1060,6 +1069,7 @@ function popularSugestoesGrupo(){
 
 /* ---------------------- 6. NAVEGAÇÃO ---------------------- */
 function mudarAba(pagina){
+  if(!podeEditar() && !ABAS_RESTRITO.includes(pagina)) pagina = 'pagina-painel';
   document.querySelectorAll('.aba-btn').forEach(b=>b.classList.toggle('ativa', b.dataset.pagina===pagina));
   document.querySelectorAll('.pagina').forEach(p=>p.classList.toggle('ativa', p.id===pagina));
   if(!CURRENT_OBRA) return;
@@ -1543,8 +1553,9 @@ async function carregarEquipe(){
     const r = await apiFetch('/api/auth/usuarios');
     const body = document.getElementById('equipeBody');
     body.innerHTML = r.usuarios.map(u => `<tr>
-      <td>${u.nome}</td><td class="mono">${u.email}</td>
-      <td><input type="checkbox" ${u.admin?'checked':''} onchange="alterarUsuario('${u.id}', {admin:this.checked})" ${u.email===USUARIO.email?'disabled':''}></td>
+      <td>${escH(u.nome)}</td><td class="mono">${escH(u.email)}</td>
+      <td><select class="grupo-select-inline" onchange="alterarUsuario('${u.id}', {perfil:this.value})" ${u.admin||u.email===USUARIO.email?'disabled title="Administrador sempre tem acesso completo"':''}>${Object.keys(PERFIS_LABEL).map(p=>`<option value="${p}" ${(u.admin?'editor':(u.perfil||'editor'))===p?'selected':''}>${PERFIS_LABEL[p]}</option>`).join('')}</select></td>
+      <td><input type="checkbox" ${u.admin?'checked':''} onchange="alterarUsuario('${u.id}', {admin:this.checked}).then(carregarEquipe)" ${u.email===USUARIO.email?'disabled':''}></td>
       <td><input type="checkbox" ${u.ativo?'checked':''} onchange="alterarUsuario('${u.id}', {ativo:this.checked})" ${u.email===USUARIO.email?'disabled':''}></td>
       <td>${u.email===USUARIO.email ? '' : `<button class="btn danger fino" onclick="excluirUsuario('${u.id}', ${jsA(u.nome)})">Excluir</button>`}</td>
     </tr>`).join('');
@@ -1555,13 +1566,15 @@ async function criarUsuario(){
   const email = document.getElementById('eq_email').value.trim();
   const senha = document.getElementById('eq_senha').value;
   const admin = document.getElementById('eq_admin').checked;
+  const perfil = admin ? 'editor' : document.getElementById('eq_perfil').value;
   if(!nome || !email || !senha){ toast('Preencha nome, e-mail e senha.', true); return; }
   try{
-    await apiFetch('/api/auth/usuarios', { method:'POST', body: JSON.stringify({ nome, email, senha, admin }) });
+    await apiFetch('/api/auth/usuarios', { method:'POST', body: JSON.stringify({ nome, email, senha, admin, perfil }) });
     document.getElementById('eq_nome').value = '';
     document.getElementById('eq_email').value = '';
     document.getElementById('eq_senha').value = '';
     document.getElementById('eq_admin').checked = false;
+    document.getElementById('eq_perfil').value = 'editor'; document.getElementById('eq_perfil').disabled = false;
     await carregarEquipe();
     toast('Usuário criado — avise a pessoa da senha provisória.');
   }catch(e){ toast('Erro: ' + e.message, true); }
