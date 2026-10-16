@@ -20,14 +20,15 @@ function linhaParaObra(r){
 router.get('/', autenticar, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, nome, tipo_obra, municipio, responsavel, criado_por_nome, atualizado_em,
-            extras->'fluxo' AS fluxo, extras->>'convenio' AS convenio,
+            extras->'fluxo' AS fluxo, extras->>'convenio' AS convenio, extras->>'valorInformado' AS valor_informado,
             (SELECT COALESCE(SUM(CASE WHEN jsonb_typeof(i->'custoTotal') = 'number' THEN (i->>'custoTotal')::float8 ELSE 0 END), 0)
                FROM jsonb_array_elements(CASE WHEN jsonb_typeof(itens) = 'array' THEN itens ELSE '[]'::jsonb END) i) AS total
        FROM obras ORDER BY atualizado_em DESC`);
   res.json({ obras: rows.map(r => ({
     id: r.id, nome: r.nome, tipoObra: r.tipo_obra, municipio: r.municipio, responsavel: r.responsavel,
     criadoPorNome: r.criado_por_nome, atualizadoEm: r.atualizado_em,
-    fluxo: r.fluxo || null, convenio: r.convenio || '', total: r.total || 0
+    fluxo: r.fluxo || null, convenio: r.convenio || '', total: r.total || 0,
+    valorInformado: parseFloat(r.valor_informado) || 0
   })) });
 });
 
