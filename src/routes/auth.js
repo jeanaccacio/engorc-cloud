@@ -83,4 +83,17 @@ router.patch('/usuarios/:id', autenticar, exigirAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Exclui um usuário de vez (admin). As obras que ele criou continuam na equipe (só o nome do autor fica registrado).
+router.delete('/usuarios/:id', autenticar, exigirAdmin, async (req, res) => {
+  if(req.params.id === req.usuario.id) return res.status(400).json({ erro: 'Você não pode excluir a si mesmo.' });
+  const { rows } = await pool.query('SELECT admin FROM users WHERE id = $1', [req.params.id]);
+  if(!rows[0]) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+  if(rows[0].admin){
+    const r = await pool.query('SELECT COUNT(*)::int AS n FROM users WHERE admin AND ativo AND id <> $1', [req.params.id]);
+    if(r.rows[0].n === 0) return res.status(400).json({ erro: 'Não é possível excluir o último administrador ativo.' });
+  }
+  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
 module.exports = router;
