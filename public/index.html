@@ -171,6 +171,10 @@
   .seg-itens summary{ cursor:pointer; color:var(--ink-3); font-weight:600; }
   .pav-chk{ display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0; cursor:pointer; font-weight:500; color:var(--ink-text); }
   .pav-chk input{ width:auto !important; margin:0; }
+  .sit-ok{ color:var(--green-ok); font-weight:700; font-size:11.5px; }
+  .sit-fora{ color:#B3261E; font-weight:700; font-size:11.5px; }
+  .bdi-tab td, .bdi-tab th{ font-size:12px; }
+  .campo-lido{ padding:8px 0; font-family:var(--mono); font-size:13px; }
   .pav-alerta{ background:#FFF6DC; border:1px solid #E2C27A; border-left:4px solid #C98A12; border-radius:6px; padding:9px 12px; font-size:12.5px; margin:6px 0; }
   .pav-ok{ background:#E8F2EA; border:1px solid #B9D6C0; border-left:4px solid var(--green-ok); border-radius:6px; padding:9px 12px; font-size:12.5px; margin:6px 0; }
   .sug-box{ display:none; position:absolute; left:0; right:0; top:100%; z-index:50; background:var(--white); border:1px solid var(--line); border-radius:6px; max-height:280px; overflow-y:auto; box-shadow:0 8px 20px rgba(0,0,0,.12); }
@@ -408,13 +412,13 @@
         <div class="cartao-corpo">
           <div class="campo"><label>Nome da obra</label><input type="text" id="f_nome" oninput="salvarObraLeve()" placeholder="Ex.: Construção da Creche Municipal do Bairro X"></div>
           <div class="linha-dupla">
-            <div class="campo"><label>Tipo de obra (define a faixa de BDI)</label><select id="f_tipoObra" onchange="salvarObraLeve(); renderBdiPanel();"></select></div>
+            <div class="campo"><label>Tipo de obra (define a faixa de BDI)</label><select id="f_tipoObra" onchange="bdiSetTipo(0, this.value)"></select></div>
             <div class="campo"><label>Município</label><input type="text" id="f_municipio" oninput="salvarObraLeve()"></div>
           </div>
           <div class="linha-tripla">
             <div class="campo"><label>Órgão / Secretaria</label><input type="text" id="f_orgao" oninput="salvarObraLeve()"></div>
             <div class="campo"><label>Nº do processo / edital</label><input type="text" id="f_processo" oninput="salvarObraLeve()"></div>
-            <div class="campo"><label>Data-base</label><input type="date" id="f_dataBase" oninput="salvarObraLeve()"></div>
+            <div class="campo"><label>Data-base</label><input type="date" id="f_dataBase" oninput="salvarObraLeve()" onchange="CURRENT_OBRA.dataBase=this.value; recalcularOrcamentoLocal(); renderBdiPanel(); salvarObraAtual(true);"></div>
           </div>
           <div class="linha-dupla">
             <div class="campo"><label>Convênio / fonte de recurso</label>
@@ -468,29 +472,7 @@
 
     <!-- ===================== BDI ===================== -->
     <div class="pagina" id="pagina-bdi">
-      <div class="cartao">
-        <div class="cartao-cabecalho"><h2>Componentes do BDI <span class="tag" id="bdiTipoTag">—</span></h2>
-          <button class="btn ghost fino" onclick="imprimirBDI()">🖨️ Imprimir</button>
-        </div>
-        <div class="cartao-corpo" id="bdiSliders"></div>
-      </div>
-      <div class="cartao">
-        <div class="cartao-cabecalho"><h2>Tributos</h2></div>
-        <div class="cartao-corpo">
-          <div class="linha-tripla">
-            <div class="campo"><label>ISS (municipal)</label><input type="number" id="bdi_iss" step="0.01" min="0" max="10" value="2" oninput="calcularBDI()"><p class="obs">2% a 5%, conforme município</p></div>
-            <div class="campo"><label>PIS</label><input type="number" id="bdi_pis" step="0.01" min="0" max="10" value="0.65" oninput="calcularBDI()"></div>
-            <div class="campo"><label>COFINS</label><input type="number" id="bdi_cofins" step="0.01" min="0" max="10" value="3" oninput="calcularBDI()"></div>
-          </div>
-          <div class="linha-tripla">
-            <div class="campo"><label>CPRB (desoneração)</label><input type="number" id="bdi_cprb" step="0.01" min="0" max="10" value="0" oninput="calcularBDI()"><p class="obs">Use 4,5% quando o orçamento for desonerado; 0 no não desonerado.</p></div>
-          </div>
-        </div>
-      </div>
-      <div class="bdi-result">
-        <div><div class="lbl">BDI final</div><div class="value" id="bdiFinalValue">0,00%</div></div>
-      </div>
-      <div style="margin-top:14px;"><button class="btn amber" onclick="salvarBDI()">Aplicar BDI ao orçamento</button></div>
+      <div id="bdiConteudo"></div>
     </div>
 
     <!-- ===================== ORÇAMENTO ===================== -->
@@ -702,6 +684,7 @@
 
 <script src="modulos.js"></script>
 <script src="fluxo.js"></script>
+<script src="bdi.js"></script>
 <script>
 /* =====================================================================
    ENGFLUXO — sistema único (antigos EngOrc + EngPav + EngFluxo)
@@ -712,25 +695,28 @@ const LOGO_SEPLAN_BASE64 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2
 const API_BASE = (window.ENGORC_API_BASE !== undefined ? window.ENGORC_API_BASE : ''); // se front-end e backend estiverem em domínios diferentes (ex.: Netlify + Railway), defina window.ENGORC_API_BASE em config.js
 
 /* ---------------------- 0. BDI POR TIPO DE OBRA (TCU/CAIXA) ---------------------- */
-const BDI_TIPOS = {
-  edificios: { label:"Construção e Reforma de Edifícios",
+const BDI_TIPOS = {   // Quadro de Composição do BDI — CAIXA Planilha Múltipla v3.16 (Acórdão TCU 2622/2013)
+  edificios: { label:"Construção e Reforma de Edifícios", modo:'padrao',
     ac:{min:0.0300,med:0.0400,max:0.0550}, sg:{min:0.0080,med:0.0080,max:0.0100},
-    r:{min:0.0097,med:0.0127,max:0.0127}, df:{min:0.0059,med:0.0123,max:0.0139}, l:{min:0.0616,med:0.0740,max:0.0896} },
-  pavimentacao: { label:"Praças Urbanas, Rodovias, Ferrovias e Pavimentação",
+    r:{min:0.0097,med:0.0127,max:0.0127}, df:{min:0.0059,med:0.0123,max:0.0139}, l:{min:0.0616,med:0.0740,max:0.0896}, pad:{min:0.2034,med:0.2212,max:0.2500} },
+  pavimentacao: { label:"Construção de Praças Urbanas, Rodovias, Ferrovias e recapeamento e pavimentação de vias urbanas", modo:'padrao',
     ac:{min:0.0380,med:0.0401,max:0.0467}, sg:{min:0.0032,med:0.0040,max:0.0074},
-    r:{min:0.0050,med:0.0056,max:0.0097}, df:{min:0.0102,med:0.0111,max:0.0121}, l:{min:0.0664,med:0.0730,max:0.0869} },
-  agua_esgoto: { label:"Redes de Abastecimento de Água e Coleta de Esgoto",
+    r:{min:0.0050,med:0.0056,max:0.0097}, df:{min:0.0102,med:0.0111,max:0.0121}, l:{min:0.0664,med:0.0730,max:0.0869}, pad:{min:0.1960,med:0.2097,max:0.2423} },
+  agua_esgoto: { label:"Construção de Redes de Abastecimento de Água, Coleta de Esgoto", modo:'padrao',
     ac:{min:0.0343,med:0.0493,max:0.0671}, sg:{min:0.0028,med:0.0049,max:0.0075},
-    r:{min:0.0100,med:0.0139,max:0.0174}, df:{min:0.0094,med:0.0099,max:0.0117}, l:{min:0.0674,med:0.0804,max:0.0940} },
-  energia: { label:"Estações e Redes de Distribuição de Energia Elétrica",
+    r:{min:0.0100,med:0.0139,max:0.0174}, df:{min:0.0094,med:0.0099,max:0.0117}, l:{min:0.0674,med:0.0804,max:0.0940}, pad:{min:0.2076,med:0.2418,max:0.2644} },
+  energia: { label:"Construção e Manutenção de Estações e Redes de Distribuição de Energia Elétrica", modo:'padrao',
     ac:{min:0.0529,med:0.0592,max:0.0793}, sg:{min:0.0025,med:0.0051,max:0.0056},
-    r:{min:0.0100,med:0.0148,max:0.0197}, df:{min:0.0101,med:0.0107,max:0.0111}, l:{min:0.0800,med:0.0831,max:0.0951} },
-  portuarias: { label:"Obras Portuárias, Marítimas e Fluviais",
+    r:{min:0.0100,med:0.0148,max:0.0197}, df:{min:0.0101,med:0.0107,max:0.0111}, l:{min:0.0800,med:0.0831,max:0.0951}, pad:{min:0.2400,med:0.2584,max:0.2786} },
+  portuarias: { label:"Obras Portuárias, Marítimas e Fluviais", modo:'padrao',
     ac:{min:0.0400,med:0.0552,max:0.0785}, sg:{min:0.0081,med:0.0122,max:0.0199},
-    r:{min:0.0146,med:0.0232,max:0.0316}, df:{min:0.0094,med:0.0102,max:0.0133}, l:{min:0.0714,med:0.0840,max:0.1043} },
-  fornecimento_indireto: { label:"Fornecimento de Materiais e Equipamentos (aquisição indireta)",
+    r:{min:0.0146,med:0.0232,max:0.0316}, df:{min:0.0094,med:0.0102,max:0.0133}, l:{min:0.0714,med:0.0840,max:0.1043}, pad:{min:0.2280,med:0.2748,max:0.3095} },
+  fornecimento_indireto: { label:"Fornecimento de Materiais e Equipamentos (aquisição indireta - em conjunto com licitação de obras)", modo:'padrao',
     ac:{min:0.0150,med:0.0345,max:0.0449}, sg:{min:0.0030,med:0.0048,max:0.0082},
-    r:{min:0.0056,med:0.0085,max:0.0089}, df:{min:0.0085,med:0.0085,max:0.0111}, l:{min:0.0350,med:0.0511,max:0.0622} }
+    r:{min:0.0056,med:0.0085,max:0.0089}, df:{min:0.0085,med:0.0085,max:0.0111}, l:{min:0.0350,med:0.0511,max:0.0622}, pad:{min:0.1110,med:0.1402,max:0.1680} },
+  fornecimento_direto: { label:"Fornecimento de Materiais e Equipamentos (aquisição direta)", modo:'direta' },
+  estudos_projetos: { label:"Estudos e Projetos, Planos e Gerenciamento e outros correlatos", modo:'estudos',
+    k1:{min:'-',med:0,max:'-'}, k2:{min:'-',med:0.20,max:'-'}, k3:{min:'-',med:0.12,max:'-'}, pad:null }
 };
 const GRUPOS_SUGERIDOS = ["Serviços Iniciais","Fundações","Estrutura","Alvenaria/Vedação","Cobertura","Instalações Elétricas",
   "Instalações Hidrossanitárias","Esquadrias","Revestimentos","Pintura","Acabamentos","Pavimentação","Drenagem","Sinalização","Serviços Finais/Limpeza"];
@@ -1014,7 +1000,6 @@ function capturarCamposObraDaTela(){
   const nomeEl = document.getElementById('f_nome');
   if(nomeEl){
     o.nome = nomeEl.value.trim() || 'Obra sem nome';
-    o.tipoObra = document.getElementById('f_tipoObra').value;
     o.municipio = document.getElementById('f_municipio').value.trim();
     o.orgao = document.getElementById('f_orgao').value.trim();
     o.processo = document.getElementById('f_processo').value.trim();
@@ -1149,54 +1134,7 @@ function salvarGrupoAtivo(){
 }
 
 /* ---------------------- 9. BDI ---------------------- */
-function renderBdiPanel(){
-  const o = CURRENT_OBRA;
-  const tipo = BDI_TIPOS[o.tipoObra] || BDI_TIPOS.edificios;
-  document.getElementById('bdiTipoTag').textContent = tipo.label;
-  const comps = ['ac','sg','r','df','l'];
-  const labelsMap = {ac:'AC', sg:'SG', r:'R', df:'DF', l:'L'};
-  const cont = document.getElementById('bdiSliders');
-  comps.forEach(c=>{ if(o.bdi[c]==null) o.bdi[c] = tipo[c].med; });
-  cont.innerHTML = comps.map(c=>{
-    const faixa = tipo[c]; const atual = o.bdi[c];
-    return `<div class="slider-row" data-comp="${c}">
-        <label>${labelsMap[c]}</label>
-        <input type="range" min="${faixa.min}" max="${faixa.max}" step="0.0001" value="${atual}" oninput="atualizarComponenteBDI('${c}', this.value)">
-        <div class="val" id="val_${c}">${(atual*100).toFixed(2)}%</div>
-      </div>
-      <div class="minmed"><span>mín ${(faixa.min*100).toFixed(2)}%</span><span>máx ${(faixa.max*100).toFixed(2)}%</span></div>`;
-  }).join('');
-  document.getElementById('bdi_iss').value = o.bdi.iss ?? 2;
-  document.getElementById('bdi_pis').value = o.bdi.pis ?? 0.65;
-  document.getElementById('bdi_cofins').value = o.bdi.cofins ?? 3;
-  document.getElementById('bdi_cprb').value = o.bdi.cprb ?? 0;
-  calcularBDI();
-}
-function atualizarComponenteBDI(c, v){
-  CURRENT_OBRA.bdi[c] = parseFloat(v);
-  document.getElementById('val_'+c).textContent = (parseFloat(v)*100).toFixed(2)+'%';
-  calcularBDI();
-}
-function calcularBDI(){
-  const o = CURRENT_OBRA; const b = o.bdi;
-  const ac=b.ac||0, sg=b.sg||0, r=b.r||0, df=b.df||0, l=b.l||0;
-  const iss = parseFloat(document.getElementById('bdi_iss').value||0)/100;
-  const pis = parseFloat(document.getElementById('bdi_pis').value||0)/100;
-  const cofins = parseFloat(document.getElementById('bdi_cofins').value||0)/100;
-  const cprb = parseFloat(document.getElementById('bdi_cprb').value||0)/100;
-  b.iss = iss*100; b.pis = pis*100; b.cofins = cofins*100; b.cprb = cprb*100;
-  const I = iss+pis+cofins+cprb;
-  let bdi = 0;
-  if(I < 1) bdi = ((1+ac+sg+r)*(1+df)*(1+l) / (1-I)) - 1;
-  b.final = bdi;
-  document.getElementById('bdiFinalValue').textContent = fmtPct(bdi);
-  return bdi;
-}
-async function salvarBDI(){
-  recalcularOrcamentoLocal();
-  await salvarObraAtual();
-  toast('BDI aplicado ao orçamento.');
-}
+/* renderBdiPanel, calcularBDI, salvarBDI e imprimirBDI estão em bdi.js (modelo CAIXA, até 3 BDIs por grupo) */
 function fatorDesconto(){
   const d = Math.min(100, Math.max(0, parseFloat(CURRENT_OBRA && CURRENT_OBRA.bdi && CURRENT_OBRA.bdi.descontoPercent) || 0));
   return 1 - d/100;
@@ -1207,13 +1145,14 @@ function precoOriginalItem(it){
   return custoPorRegime({custoDesonerado:it.custoDesoneradoBase, custoNaoDesonerado:it.custoNaoDesoneradoBase}, CURRENT_OBRA.regime);
 }
 function recalcItem(it){
-  const bdi = CURRENT_OBRA.bdi.final || 0;
+  const bdi = bdiDoItem(it);
   it.custoOriginal = precoOriginalItem(it);
   it.custoUnitario = it.custoOriginal * fatorDesconto();   // preço c/ desconto, sem BDI
   it.custoComBDI = it.custoUnitario * (1+bdi);
   it.custoTotal = it.custoComBDI * (it.quantidade||0);
 }
 function recalcularOrcamentoLocal(){
+  calcularBDI();
   CURRENT_OBRA.itens.forEach(recalcItem);
   renderOrcamento(); renderCronograma();
 }
@@ -1239,7 +1178,7 @@ async function editarCustoBDI(idx, val){
   const it = CURRENT_OBRA.itens[idx];
   const v = parseFloat(String(val).replace(',','.'));
   if(isNaN(v) || v < 0){ renderOrcamento(); return; }
-  const bdi = CURRENT_OBRA.bdi.final || 0, f = fatorDesconto();
+  const bdi = bdiDoItem(it), f = fatorDesconto();
   if(f <= 0){ toast('Desconto de 100%: não é possível definir preço c/ BDI.', true); renderOrcamento(); return; }
   it.manual = true;
   it.custoOriginal = v / (1+bdi) / f;          // retro-calcula o custo unitário que gera esse valor final
@@ -1287,7 +1226,7 @@ async function adicionarItemOrcamento(itemId){
   if(o.grupos.length===0){ toast('Crie um grupo de serviço antes de adicionar itens.', true); return; }
   const item = ULTIMA_BUSCA.find(i=>i.id===itemId); if(!item) return;
   if(o.itens.some(i=>i.itemId===itemId && !i.auto)){ toast('Este item já está no orçamento.'); return; }
-  const bdi = o.bdi.final || 0;
+  const bdi = bdiDoGrupo(o, o.grupoAtivo || o.grupos[0]);
   const base = custoPorRegime(item, o.regime);
   o.itens.push({
     itemId:item.id, fonte:item.fonte, codigo:item.codigo, descricao:item.descricao, unidade:item.unidade,
@@ -1325,7 +1264,7 @@ function renderOrcamento(){
   gruposComItens().forEach(grp=>{
     if(grp.itens.length===0) return;
     const subtotal = grp.itens.reduce((s,it)=>s+it.custoTotal,0);
-    html += `<tr class="linha-subtotal"><td colspan="8">${grp.nome}</td><td class="num">${fmtMoney(subtotal)}</td><td colspan="2"></td></tr>`;
+    html += `<tr class="linha-subtotal"><td colspan="8">${grp.nome} ${CURRENT_OBRA.bdi.lista.length>1 ? `<select class="grupo-select-inline" style="margin-left:8px;text-transform:none;font-weight:400;" title="BDI deste grupo" onchange="bdiSetGrupo(${jsA(grp.nome)}, this.value)">${CURRENT_OBRA.bdi.lista.map((b,i)=>`<option value="${i}" ${bdiIdxDoGrupo(CURRENT_OBRA,grp.nome)===i?'selected':''}>${BDI_NOMES[i]} — ${fmtPct(b.final)}</option>`).join('')}</select>` : ''}</td><td class="num">${fmtMoney(subtotal)}</td><td colspan="2"></td></tr>`;
     grp.itens.forEach(it=>{
       numeroGeral++;
       const idxReal = o.itens.indexOf(it);
@@ -1390,7 +1329,7 @@ function atualizarTotais(){
   if(rs) rs.textContent = dp>0 ? `-${dp.toLocaleString('pt-BR')}% por item · economia no custo direto: ${fmtMoney(diretoOrig-direto)}` : 'Sem desconto';
   const total = o.itens.reduce((s,it)=>s+it.custoTotal,0);
   document.getElementById('totDireto').textContent = fmtMoney(direto);
-  document.getElementById('totBdiPct').textContent = fmtPct(o.bdi.final||0);
+  document.getElementById('totBdiPct').textContent = bdiResumoTexto(o);
   document.getElementById('totFinal').textContent = fmtMoney(total);
 }
 
@@ -1481,40 +1420,6 @@ function dispararImpressao(html){
 }
 window.addEventListener('afterprint', ()=>{ document.getElementById('areaImpressao').classList.remove('doc-ativo'); });
 
-function imprimirBDI(){
-  const o = CURRENT_OBRA;
-  const tipo = BDI_TIPOS[o.tipoObra] || BDI_TIPOS.edificios;
-  const b = o.bdi;
-  const linha = (label,val,faixa)=>`<tr><td>${label}</td><td class="num">${(val*100).toFixed(2)}%</td><td class="num">${(faixa.min*100).toFixed(2)}% – ${(faixa.max*100).toFixed(2)}%</td></tr>`;
-  const html = `<div class="doc-impressao">
-    ${cabecalhoImpressao()}
-    <div class="faixa-titulo">Bonificação e Despesas Indiretas — BDI</div>
-    ${infoObraImpressao()}
-    <div class="obs" style="margin-bottom:10px;"><b>Tipo de obra:</b> ${tipo.label}</div>
-    <div class="bdi-quadro">
-      <table><thead><tr><th>Componente</th><th>Valor adotado</th><th>Faixa de referência</th></tr></thead>
-        <tbody>
-          ${linha('AC — Administração Central', b.ac, tipo.ac)}
-          ${linha('SG — Seguro e Garantia', b.sg, tipo.sg)}
-          ${linha('R — Risco', b.r, tipo.r)}
-          ${linha('DF — Despesas Financeiras', b.df, tipo.df)}
-          ${linha('L — Lucro', b.l, tipo.l)}
-        </tbody></table>
-      <table><thead><tr><th>Tributo</th><th>Alíquota</th></tr></thead>
-        <tbody>
-          <tr><td>ISS</td><td class="num">${b.iss.toFixed(2)}%</td></tr>
-          <tr><td>PIS</td><td class="num">${b.pis.toFixed(2)}%</td></tr>
-          <tr><td>COFINS</td><td class="num">${b.cofins.toFixed(2)}%</td></tr>
-          ${(b.cprb||0)>0 ? `<tr><td>CPRB</td><td class="num">${(b.cprb||0).toFixed(2)}%</td></tr>` : ''}
-        </tbody></table>
-    </div>
-    <div class="bdi-final-box"><div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;">BDI Final Adotado</div><div class="v">${fmtPct(b.final)}</div></div>
-    <div class="observacoes">Fórmula: BDI = [(1+AC+SG+R)·(1+DF)·(1+L) / (1−I)] − 1, onde I = ISS + PIS + COFINS${(b.cprb||0)>0?' + CPRB':''}. Referência: Acórdão TCU 2622/2013.</div>
-    <div class="assinatura"><div class="linha"></div>${o.responsavel||''}<br>${o.crea||''}</div>
-  </div>`;
-  dispararImpressao(html);
-}
-
 function imprimirOrcamento(){
   const o = CURRENT_OBRA;
   if(o.itens.length===0){ toast('Orçamento vazio.', true); return; }
@@ -1525,7 +1430,7 @@ function imprimirOrcamento(){
   const resumoLinhas = [];
   grupos.forEach((grp,gIdx)=>{
     const subtotal = grp.itens.reduce((s,it)=>s+it.custoTotal,0);
-    linhasHtml += `<tr class="linha-grupo"><td>${gIdx+1}</td><td colspan="7">${grp.nome}</td><td class="num">${fmtMoney(subtotal)}</td></tr>`;
+    linhasHtml += `<tr class="linha-grupo"><td>${gIdx+1}</td><td colspan="7">${grp.nome}${o.bdi.lista.length>1 ? ` — ${bdiRotuloGrupo(o, grp.nome)}` : ''}</td><td class="num">${fmtMoney(subtotal)}</td></tr>`;
     grp.itens.forEach((it,lIdx)=>{
       numeroGeral++;
       linhasHtml += `<tr>
@@ -1544,7 +1449,7 @@ function imprimirOrcamento(){
     ${descPct>0?`<div style="border:1px solid #C98A12;background:#FFF6DC;padding:5px 8px;font-size:10px;margin:6px 0;"><b>Desconto de ${descPct.toLocaleString('pt-BR')}%</b> aplicado sobre o preço unitário de todos os itens (antes do BDI). Preços originais riscados.</div>`:''}
     <table>
       <thead><tr><th>Item</th><th>Descrição</th><th>Índice</th><th>Código</th><th>Qtd.</th><th>Un.</th>
-        <th>V. Unit.${descPct>0?' (c/ desc.)':''}</th><th>V. Total</th><th>V. c/ BDI (${fmtPct(o.bdi.final||0)})</th></tr></thead>
+        <th>V. Unit.${descPct>0?' (c/ desc.)':''}</th><th>V. Total</th><th>V. c/ BDI${o.bdi.lista.length>1?'':' ('+fmtPct(o.bdi.final||0)+')'}</th></tr></thead>
       <tbody>${linhasHtml}<tr class="linha-total-geral"><td colspan="8">TOTAL GERAL</td><td class="num">${fmtMoney(totalGeral)}</td></tr></tbody>
     </table>
     <div class="quadro-resumo">
@@ -1556,7 +1461,7 @@ function imprimirOrcamento(){
       OBSERVAÇÕES:<br>
       1) Base de referência SINAPI/SICRO ${o.regime==='desonerado'?'com':'sem'} desoneração, conforme catálogo carregado no sistema.<br>
       2) Itens marcados como "Composição" ou "Cotação" são de responsabilidade própria da entidade orçamentista.<br>
-      3) BDI aplicado: ${fmtPct(o.bdi.final||0)}.${descPct>0?`<br>
+      3) BDI aplicado: ${o.bdi.lista.length>1 ? o.bdi.lista.map((b,i)=>`${BDI_NOMES[i]} ${fmtPct(b.final)} (${bdiTipoInfo(b.tipo).label})`).join('; ') + ' — conforme indicado em cada grupo' : fmtPct(o.bdi.final||0)}.${descPct>0?`<br>
       4) Desconto de ${descPct.toLocaleString('pt-BR')}% aplicado ao preço unitário de cada item, antes da incidência do BDI.`:''}${o.itens.some(i=>i.manual)?`<br>
       ${descPct>0?5:4}) Itens com custo unitário ajustado manualmente pelo orçamentista: ${o.itens.filter(i=>i.manual).length}.`:''}${o.itens.some(i=>i.auto)?`<br>
       • Quantitativos de pavimentação, drenagem e sinalização calculados por trecho — ver Memória de Cálculo.`:''}${o.itens.some(i=>!(i.custoOriginal>0))?`<br>
@@ -1611,7 +1516,7 @@ function exportarXlsx(){
     grp.itens.forEach(it=>{
       n++;
       rows.push([grp.nome, n, it.fonte, it.codigo, it.descricao, it.unidade,
-        Number((it.custoOriginal!=null?it.custoOriginal:it.custoUnitario).toFixed(2)), Number((o.bdi.descontoPercent||0).toFixed(2)), Number(it.custoUnitario.toFixed(2)), Number(((o.bdi.final||0)*100).toFixed(2)),
+        Number((it.custoOriginal!=null?it.custoOriginal:it.custoUnitario).toFixed(2)), Number((o.bdi.descontoPercent||0).toFixed(2)), Number(it.custoUnitario.toFixed(2)), Number((bdiDoGrupo(o, it.grupo)*100).toFixed(2)),
         Number(it.custoComBDI.toFixed(2)), it.quantidade, Number(it.custoTotal.toFixed(2))]);
     });
   });
@@ -1620,7 +1525,7 @@ function exportarXlsx(){
     [`ORÇAMENTO — ${o.nome}`],
     [`Órgão: ${o.orgao||''}    Município: ${o.municipio||''}    Processo: ${o.processo||''}`],
     [`Responsável técnico: ${o.responsavel||''}    ${o.crea||''}`],
-    [`Regime: ${o.regime==='desonerado'?'Desonerado':'Não desonerado'}    Data-base: ${o.dataBase||''}    BDI: ${fmtPct(o.bdi.final||0)}`],
+    [`Regime: ${o.regime==='desonerado'?'Desonerado':'Não desonerado'}    Data-base: ${o.dataBase||''}    BDI: ${bdiResumoTexto(o)}`],
     [], header, ...rows, [],
     ["", "", "", "", "", "", "", "", "", "", "", "TOTAL GERAL", Number(totalGeral.toFixed(2))]
   ];

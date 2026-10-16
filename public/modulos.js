@@ -324,7 +324,7 @@ async function pavRestaurarExcluidos(){
 /* ---------- Cálculo reverso: extensão do trecho "ajustável" que cabe no valor do convênio ---------- */
 function pavCustoCenario(L){
   const o = CURRENT_OBRA, p = o.extras.pav;
-  const bdi = o.bdi.final || 0, f = fatorDesconto();
+  const f = fatorDesconto();
   const ag = pavAgregar(p.segmentos, p.config, L);
   (p.excluidos||[]).forEach(k=>{ delete ag[k]; });
   let total = 0;
@@ -335,7 +335,7 @@ function pavCustoCenario(L){
     if(it && it.qtdManual) return;
     let unitBDI;
     if(it) unitBDI = it.custoComBDI;
-    else { const cat = PAV_CAT && PAV_CAT[a.codigo]; unitBDI = (cat ? custoPorRegime(cat, o.regime) : 0) * f * (1+bdi); }
+    else { const cat = PAV_CAT && PAV_CAT[a.codigo]; unitBDI = (cat ? custoPorRegime(cat, o.regime) : 0) * f * (1+bdiDoGrupo(o, String(a.chave).split('|')[0])); }
     total += a.qtd * unitBDI;
   });
   return total;
@@ -368,8 +368,9 @@ async function pavAtualizarTudo(){
 async function pavAdicionarTrecho(){
   const o = CURRENT_OBRA; const p = pavGarantir(o);
   try{ await pavCarregarCatalogo(); }catch(e){ toast('Não foi possível ler a base de preços: ' + e.message, true); return; }
-  if(p.segmentos.length === 0 && o.tipoObra !== 'pavimentacao' && o.itens.length === 0){
-    o.tipoObra = 'pavimentacao'; o.bdi.ac = o.bdi.sg = o.bdi.r = o.bdi.df = o.bdi.l = null;
+  bdiGarantir(o);
+  if(p.segmentos.length === 0 && o.bdi.lista.length === 1 && o.bdi.lista[0].tipo !== 'pavimentacao' && o.itens.length === 0){
+    o.bdi.lista[0].tipo = 'pavimentacao'; bdiAplicarMedios(o.bdi.lista[0]); bdiCalcularTudo(o);
     preencherFormObra(); renderBdiPanel();
   }
   p.segmentos.push(pavNovoSegmento(p));
@@ -986,7 +987,7 @@ function renderArt(){
       ${lin('Nº do processo', o.processo)}${lin('Convênio / fonte de recurso', convenioTexto())}</tbody></table>
     <h4 class="art-h">Quantitativos e valor</h4><table><tbody>
       ${p && p.segmentos.length ? lin('Extensão total da via', fmtQ(ext)+' m') + lin('Área de pavimentação', fmtQ(area)+' m²') + lin('Nº de trechos', String(p.segmentos.length)) : ''}
-      ${lin('Valor sem BDI', fmtMoney(direto))}${lin('BDI', fmtPct(o.bdi.final||0))}${lin('Valor da obra (com BDI)', fmtMoney(total))}</tbody></table>
+      ${lin('Valor sem BDI', fmtMoney(direto))}${lin('BDI', bdiResumoTexto(o))}${lin('Valor da obra (com BDI)', fmtMoney(total))}</tbody></table>
     <h4 class="art-h">Atividades técnicas</h4>
     ${atividades.size ? '<ul style="margin:4px 0 10px;font-size:12.5px;">' + Array.from(atividades).map(x=>`<li>${escH(x)}</li>`).join('') + '</ul>' : '<p class="obs">Cadastre itens/trechos para gerar a lista.</p>'}
     <h4 class="art-h">Observação sugerida</h4>
@@ -995,7 +996,7 @@ function renderArt(){
 }
 function artObsSugerida(total){
   const o = CURRENT_OBRA;
-  return `ART referente à elaboração do orçamento e projeto da obra "${o.nome||''}", ${o.municipio||''}${o.processo?', processo nº '+o.processo:''}, com valor estimado de ${fmtMoney(total)} (BDI ${fmtPct(o.bdi.final||0)}), base de referência SINAPI ${o.regime==='desonerado'?'com':'sem'} desoneração${o.dataBase?' — data-base '+new Date(o.dataBase+'T12:00:00').toLocaleDateString('pt-BR',{month:'2-digit',year:'numeric'}):''}.`;
+  return `ART referente à elaboração do orçamento e projeto da obra "${o.nome||''}", ${o.municipio||''}${o.processo?', processo nº '+o.processo:''}, com valor estimado de ${fmtMoney(total)} (BDI ${bdiResumoTexto(o)}), base de referência SINAPI ${o.regime==='desonerado'?'com':'sem'} desoneração${o.dataBase?' — data-base '+new Date(o.dataBase+'T12:00:00').toLocaleDateString('pt-BR',{month:'2-digit',year:'numeric'}):''}.`;
 }
 function convenioTexto(){
   const e = (CURRENT_OBRA && CURRENT_OBRA.extras) || {};
@@ -1036,6 +1037,7 @@ function migrarObra(o){
     p.segmentos.forEach(s=>pavNormalizarSegmento(s, p));
   }
   fluxoGarantir(o);   // toda obra tem acompanhamento (fases/checklists)
+  bdiGarantir(o);     // BDI no modelo CAIXA (até 3 BDIs, por grupo de serviço)
   o.extras.versao = VERSAO_FORMATO_OBRA;
   return o;
 }
@@ -1395,14 +1397,8 @@ async function importarEngPav(P, manter, rel){
   if(zerados.length) rel.avisos.push(`${zerados.length} item(ns) sem preço na base (ex.: imprimação/pintura de ligação): ${escH(zerados.map(i=>i.codigo).join(', '))} — informe o custo (cotação ou composição).`);
   return { id:r.obra.id, nome:o.nome, itens:o.itens.length, total: totalObra(o), totalOriginal };
 }
-// Calcula o BDI final de uma obra a partir dos componentes (sem depender da tela).
-function calcularBdiDe(o){
-  const b = o.bdi; const tipo = BDI_TIPOS[o.tipoObra] || BDI_TIPOS.edificios;
-  ['ac','sg','r','df','l'].forEach(c=>{ if(b[c]==null) b[c] = tipo[c].med; });
-  const I = (num(b.iss)+num(b.pis)+num(b.cofins)+num(b.cprb))/100;
-  b.final = I < 1 ? ((1+b.ac+b.sg+b.r)*(1+b.df)*(1+b.l)/(1-I)) - 1 : 0;
-  return b.final;
-}
+// Calcula o(s) BDI(s) de uma obra sem depender da tela (converte o formato antigo, se for o caso).
+function calcularBdiDe(o){ bdiGarantir(o); return bdiCalcularTudo(o); }
 
 /* =====================================================================
    6. TEMA DA IMPRESSÃO — cores tiradas da logo do usuário (ou escolhidas por ele)

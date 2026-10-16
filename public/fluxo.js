@@ -94,7 +94,7 @@ function renderPainel(){
       <div class="pcard-meta">
         <div><b>Responsável:</b> ${escH(x.o.responsavel||'—')}</div>
         <div><b>Previsão de conclusão:</b> ${x.f.prazoFinalPrevisto ? fluxoData(x.f.prazoFinalPrevisto) : 'não definida'}</div>
-        <div><b>Orçamento:</b> ${x.o.total > 0 ? fmtMoney(x.o.total) : '—'}${x.o.convenio ? ' · ' + escH(x.o.convenio) : ''}</div>
+        <div><b>Orçamento:</b> ${x.o.total > 0 ? fmtMoney(x.o.total) : (x.o.valorInformado > 0 ? fmtMoney(x.o.valorInformado) + ' <span class="tag" title="Valor digitado na aba Acompanhamento (orçamento feito fora do sistema)">informado</span>' : '—')}${x.o.convenio ? ' · ' + escH(x.o.convenio) : ''}</div>
       </div>
       <div class="pprog"><div style="width:${x.prog}%"></div></div>
       <div class="pcard-rodape">${x.prog}% do checklist · atualizada ${x.o.atualizadoEm ? new Date(x.o.atualizadoEm).toLocaleDateString('pt-BR') : ''}</div>
@@ -102,7 +102,7 @@ function renderPainel(){
   document.getElementById('painelVazio').style.display = filtrada.length ? 'none' : 'block';
   const atrasadas = lista.filter(x=>x.status==='atrasado').length, atencao = lista.filter(x=>x.status==='atencao').length;
   const andamento = lista.filter(x=>x.status!=='concluida').length;
-  const totalOrc = lista.filter(x=>x.status!=='concluida').reduce((s,x)=>s+(x.o.total||0),0);
+  const totalOrc = lista.filter(x=>x.status!=='concluida').reduce((s,x)=>s+valorPainelObra(x.o),0);
   document.getElementById('painelResumo').innerHTML = `
     <div class="t"><div class="lbl">Obras / projetos</div><div class="v">${lista.length}</div></div>
     <div class="t"><div class="lbl">Em andamento</div><div class="v">${andamento}</div></div>
@@ -173,6 +173,14 @@ function fluxoDicaSistema(item){
   if(t.includes('memorial') && o.extras && o.extras.pav && o.extras.pav.segmentos.length) return `<span class="fdica" onclick="mudarAba('pagina-segmentos')">memória de cálculo disponível</span>`;
   return '';
 }
+// Valor do Painel: orçamento do sistema; se não houver, o valor informado manualmente.
+function valorPainelObra(o){ return num(o.total) > 0 ? num(o.total) : num(o.valorInformado); }
+async function acompValorInformado(v){
+  const o = CURRENT_OBRA; o.extras = o.extras || {};
+  const t = String(v).replace(/[R$\s]/g,''); const n = Math.max(0, num(t.includes(',') ? t.replace(/\./g,'').replace(',','.') : t));
+  if(n > 0) o.extras.valorInformado = Math.round(n*100)/100; else delete o.extras.valorInformado;
+  await salvarObraAtual(true); renderAcompanhamento(); toast(n > 0 ? 'Valor do orçamento informado salvo.' : 'Valor informado removido.');
+}
 function renderAcompanhamento(){
   const cont = document.getElementById('acompCorpo'); if(!cont || !CURRENT_OBRA) return;
   const o = CURRENT_OBRA, f = fluxoGarantir(o);
@@ -191,6 +199,11 @@ function renderAcompanhamento(){
       <div class="campo"><label>Tipo</label><select onchange="fluxoCampo('tipo', this.value)">${TIPOS_FLUXO.map(t=>`<option ${t===f.tipo?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="campo"><label>Local / endereço</label><input type="text" value="${escH(f.local||'')}" placeholder="Bairro, rua, referência" onchange="fluxoCampo('local', this.value.trim())"></div>
       <div class="campo"><label>Responsável · fonte de recurso</label><div class="campo-lido" onclick="mudarAba('pagina-obra')" title="Editar na aba Obra">${escH(o.responsavel||'—')} · ${escH(convenioTexto()||'fonte não informada')}</div></div>
+    </div>
+    <div class="linha-tripla">
+      <div class="campo"><label>Valor do orçamento informado (R$, c/ BDI) — para obra orçada fora do sistema</label>
+        <input type="text" inputmode="decimal" value="${num(o.extras&&o.extras.valorInformado)>0 ? num(o.extras.valorInformado).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : ''}" placeholder="ex.: 1.250.000,00" onchange="acompValorInformado(this.value)">
+        <p class="obs">${o.itens.length ? 'Esta obra tem orçamento no sistema (' + fmtMoney(o.itens.reduce((s,i)=>s+num(i.custoTotal),0)) + ') — ele prevalece sobre o valor informado.' : 'Entra no total do Painel enquanto a obra estiver em andamento.'}</p></div>
     </div>
     <div class="campo"><label>Observações</label><textarea rows="2" placeholder="Pendências, contatos, informações relevantes…" onchange="fluxoCampo('observacoes', this.value)">${escH(f.observacoes||'')}</textarea></div>
     <div class="fase-abas">${FASES.map(fa=>{ const it = f.checklists[fa.id]||[]; const k = it.filter(x=>x.concluido).length;
@@ -224,7 +237,7 @@ async function excluirObraAtual(){
 // Resumo usado na lista OBRAS (painel) após salvar, sem precisar recarregar do servidor.
 function resumoPainelDaObra(o){
   return { fluxo: o.extras && o.extras.fluxo, total: o.itens.reduce((s,i)=>s+num(i.custoTotal),0),
-    responsavel: o.responsavel, convenio: (o.extras && o.extras.convenio) || '', atualizadoEm: o.atualizadoEm || new Date().toISOString() };
+    responsavel: o.responsavel, convenio: (o.extras && o.extras.convenio) || '', valorInformado: num(o.extras && o.extras.valorInformado), atualizadoEm: o.atualizadoEm || new Date().toISOString() };
 }
 
 /* ---------------------- IMPORTAR OBRAS DO ENGFLUXO ANTIGO (pasta /dados/*.json) ---------------------- */
