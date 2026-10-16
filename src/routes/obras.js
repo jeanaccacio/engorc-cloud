@@ -1,6 +1,6 @@
 const express = require('express');
 const { pool } = require('../../db');
-const { autenticar, exigirAdmin } = require('../auth');
+const { autenticar, exigirAdmin, exigirEditor, exigirChecklist } = require('../auth');
 
 const router = express.Router();
 function uid(prefixo){ return prefixo + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -38,7 +38,7 @@ router.get('/:id', autenticar, async (req, res) => {
   res.json({ obra: linhaParaObra(rows[0]) });
 });
 
-router.post('/', autenticar, async (req, res) => {
+router.post('/', autenticar, exigirEditor, async (req, res) => {
   const b = req.body || {};
   const id = b.id || uid('obra');
   const bdiPadrao = { ac:null, sg:null, r:null, df:null, l:null, iss:2, pis:0.65, cofins:3, final:0 };
@@ -58,7 +58,7 @@ router.post('/', autenticar, async (req, res) => {
 
 // Atualiza a obra inteira (mesmo padrão do "salvar" já usado no front-end).
 // "extras" é opcional: um front-end antigo que não envia o campo não apaga os dados de pavimentação.
-router.put('/:id', autenticar, async (req, res) => {
+router.put('/:id', autenticar, exigirEditor, async (req, res) => {
   const b = req.body || {};
   const { rowCount } = await pool.query(
     `UPDATE obras SET nome=$1, tipo_obra=$2, municipio=$3, orgao=$4, processo=$5, responsavel=$6, crea=$7,
@@ -73,6 +73,20 @@ router.put('/:id', autenticar, async (req, res) => {
   if(!rowCount) return res.status(404).json({ erro: 'Obra não encontrada.' });
   const { rows } = await pool.query('SELECT * FROM obras WHERE id = $1', [req.params.id]);
   res.json({ obra: linhaParaObra(rows[0]) });
+});
+
+// Salva SOMENTE o acompanhamento (fase, prazos, checklist) — usado pelo perfil "acompanhamento".
+// Não toca em orçamento, BDI, itens nem valores.
+router.put('/:id/fluxo', autenticar, exigirChecklist, async (req, res) => {
+  const f = (req.body || {}).fluxo;
+  if(!f || typeof f !== 'object' || Array.isArray(f)) return res.status(400).json({ erro: 'Acompanhamento inválido.' });
+  const txt = JSON.stringify(f);
+  if(txt.length > 500000) return res.status(400).json({ erro: 'Acompanhamento grande demais.' });
+  const { rowCount } = await pool.query(
+    `UPDATE obras SET extras = jsonb_set(COALESCE(extras, '{}'::jsonb), '{fluxo}', $1::jsonb, true), atualizado_em = now() WHERE id = $2`,
+    [txt, req.params.id]);
+  if(!rowCount) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  res.json({ ok: true, atualizadoEm: new Date().toISOString() });
 });
 
 // Excluir obra: só administradores (evita perda acidental de dados da equipe).

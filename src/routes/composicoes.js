@@ -1,6 +1,6 @@
 const express = require('express');
 const { pool } = require('../../db');
-const { autenticar } = require('../auth');
+const { autenticar, exigirEditor } = require('../auth');
 
 const router = express.Router();
 
@@ -34,7 +34,7 @@ router.get('/', autenticar, async (req, res) => {
   })) });
 });
 
-router.put('/:itemId', autenticar, async (req, res) => {
+router.put('/:itemId', autenticar, exigirEditor, async (req, res) => {
   const b = req.body || {};
   const linhas = Array.isArray(b.linhas) ? b.linhas.slice(0, 500).map(limparLinha) : [];
   await pool.query(
@@ -48,7 +48,7 @@ router.put('/:itemId', autenticar, async (req, res) => {
 
 // Grava várias composições de uma vez (importação por planilha ou de uma obra antiga do EngPav).
 // modo "manter" não sobrescreve composições que já existem; "substituir" sobrescreve.
-router.post('/lote', autenticar, async (req, res) => {
+router.post('/lote', autenticar, exigirEditor, async (req, res) => {
   const lista = Array.isArray(req.body && req.body.composicoes) ? req.body.composicoes.slice(0, 3000) : [];
   const substituir = (req.body && req.body.modo) === 'substituir';
   const client = await pool.connect();
@@ -73,7 +73,7 @@ router.post('/lote', autenticar, async (req, res) => {
   }finally{ client.release(); }
 });
 
-router.delete('/:itemId', autenticar, async (req, res) => {
+router.delete('/:itemId', autenticar, exigirEditor, async (req, res) => {
   await pool.query('DELETE FROM composicoes WHERE item_id = $1', [req.params.itemId]);
   res.json({ ok: true });
 });

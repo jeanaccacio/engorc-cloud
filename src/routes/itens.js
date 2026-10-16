@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const { pool } = require('../../db');
-const { autenticar, exigirAdmin } = require('../auth');
+const { autenticar, exigirAdmin, exigirEditor } = require('../auth');
 const { parseSinapiBuffer } = require('../utils/parseSinapi');
 
 const router = express.Router();
@@ -54,7 +54,7 @@ router.post('/por-ids', autenticar, async (req, res) => {
 
 // Cria/atualiza um item próprio da equipe (composição própria fora do SINAPI, ex.: C001).
 // Fica no catálogo compartilhado com fonte "Própria" e NÃO é apagado quando a base SINAPI é reimportada.
-router.post('/propria', autenticar, async (req, res) => {
+router.post('/propria', autenticar, exigirEditor, async (req, res) => {
   const b = req.body || {};
   const codigo = String(b.codigo || '').trim();
   const descricao = String(b.descricao || '').trim();
@@ -74,7 +74,7 @@ router.post('/propria', autenticar, async (req, res) => {
   res.json({ item: rows[0] });
 });
 
-router.delete('/propria/:codigo', autenticar, async (req, res) => {
+router.delete('/propria/:codigo', autenticar, exigirEditor, async (req, res) => {
   const id = 'Própria ' + String(req.params.codigo).trim();
   await pool.query(`DELETE FROM itens WHERE id = $1 AND fonte = 'Própria'`, [id]);
   await pool.query('DELETE FROM composicoes WHERE item_id = $1', [id]);

@@ -6,6 +6,7 @@ const { autenticar, exigirAdmin } = require('../auth');
 
 const router = express.Router();
 
+const PERFIS = ['editor', 'acompanhamento', 'visualizador'];
 function uid(prefixo){ return prefixo + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
 router.post('/login', async (req, res) => {
@@ -17,8 +18,9 @@ router.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(senha, user.senha_hash);
   if(!ok) return res.status(401).json({ erro: 'E-mail ou senha incorretos.' });
   const payload = { id: user.id, nome: user.nome, email: user.email, admin: user.admin };
+  const perfil = user.admin ? 'editor' : (user.perfil || 'editor');
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, usuario: { ...payload, logo: user.logo_base64 || null, coresImpressao: user.cores_impressao || null } });
+  res.json({ token, usuario: { ...payload, perfil, logo: user.logo_base64 || null, coresImpressao: user.cores_impressao || null } });
 });
 
 router.get('/me', autenticar, async (req, res) => {
@@ -52,13 +54,14 @@ router.put('/me/cores', autenticar, async (req, res) => {
 
 // Lista usuários (admin) — para gestão da equipe.
 router.get('/usuarios', autenticar, exigirAdmin, async (req, res) => {
-  const { rows } = await pool.query('SELECT id, nome, email, admin, ativo, criado_em FROM users ORDER BY criado_em ASC');
+  const { rows } = await pool.query('SELECT id, nome, email, admin, ativo, perfil, criado_em FROM users ORDER BY criado_em ASC');
   res.json({ usuarios: rows });
 });
 
 // Cria um novo usuário da equipe (admin) — não existe autocadastro público.
 router.post('/usuarios', autenticar, exigirAdmin, async (req, res) => {
   const { nome, email, senha, admin } = req.body || {};
+  const perfil = PERFIS.includes(req.body && req.body.perfil) ? req.body.perfil : 'editor';
   if(!nome || !email || !senha) return res.status(400).json({ erro: 'Nome, e-mail e senha são obrigatórios.' });
   const emailNorm = String(email).toLowerCase().trim();
   const existe = await pool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
@@ -66,17 +69,18 @@ router.post('/usuarios', autenticar, exigirAdmin, async (req, res) => {
   const senhaHash = await bcrypt.hash(senha, 10);
   const id = uid('u');
   await pool.query(
-    'INSERT INTO users (id, nome, email, senha_hash, admin) VALUES ($1,$2,$3,$4,$5)',
-    [id, nome.trim(), emailNorm, senhaHash, !!admin]
+    'INSERT INTO users (id, nome, email, senha_hash, admin, perfil) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, nome.trim(), emailNorm, senhaHash, !!admin, admin ? 'editor' : perfil]
   );
-  res.status(201).json({ id, nome, email: emailNorm, admin: !!admin });
+  res.status(201).json({ id, nome, email: emailNorm, admin: !!admin, perfil: admin ? 'editor' : perfil });
 });
 
 router.patch('/usuarios/:id', autenticar, exigirAdmin, async (req, res) => {
-  const { ativo, admin } = req.body || {};
+  const { ativo, admin, perfil } = req.body || {};
   const campos = [], valores = []; let i = 1;
   if(typeof ativo === 'boolean'){ campos.push(`ativo = $${i++}`); valores.push(ativo); }
-  if(typeof admin === 'boolean'){ campos.push(`admin = $${i++}`); valores.push(admin); }
+  if(typeof admin === 'boolean'){ campos.push(`admin = $${i++}`); valores.push(admin); if(admin){ campos.push(`perfil = 'editor'`); } }
+  if(PERFIS.includes(perfil)){ campos.push(`perfil = $${i++}`); valores.push(perfil); }
   if(campos.length === 0) return res.status(400).json({ erro: 'Nada para atualizar.' });
   valores.push(req.params.id);
   await pool.query(`UPDATE users SET ${campos.join(', ')} WHERE id = $${i}`, valores);
