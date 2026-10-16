@@ -716,15 +716,20 @@ function renderComposicoes(){
   const f = normalizarTxt(COMP_FILTRO);
   const itensObra = new Set(CURRENT_OBRA ? CURRENT_OBRA.itens.map(i=>i.itemId) : []);
   const filtradas = COMP_LISTA.filter(c=>!f || normalizarTxt(((c.item&&c.item.codigo)||'') + ' ' + ((c.item&&c.item.descricao)||'') + ' ' + c.itemId).includes(f));
-  lista.innerHTML = filtradas.length ? `<table><thead><tr><th>Fonte</th><th>Código</th><th>Descrição</th><th class="num">Total (${compRegime()==='desonerado'?'des.':'não des.'})</th><th class="num">Base</th><th>Atualizada</th></tr></thead><tbody>` +
+  const sel = compSelecao();
+  lista.innerHTML = filtradas.length ? `<table><thead><tr><th style="width:28px;"><input type="checkbox" title="Marcar/desmarcar todas da lista" ${filtradas.length && filtradas.every(c=>sel.has(c.itemId))?'checked':''} onclick="event.stopPropagation(); compSelecionar(this.checked?'filtradas':'tirarFiltradas')"></th><th>Fonte</th><th>Código</th><th>Descrição</th><th class="num">Total (${compRegime()==='desonerado'?'des.':'não des.'})</th><th class="num">Base</th><th>Atualizada</th></tr></thead><tbody>` +
     filtradas.map(c=>{ const it = c.item || {}; const tot = compTotal(c.linhas); const base = it.codigo ? custoPorRegime(it, compRegime()) : 0;
       return `<tr style="cursor:pointer;${COMP_ATUAL&&COMP_ATUAL.itemId===c.itemId?'background:var(--paper-2);':''}" onclick="compAbrir(${jsA(c.itemId)})">
+        <td onclick="event.stopPropagation()"><input type="checkbox" ${sel.has(c.itemId)?'checked':''} title="Incluir na impressão" onchange="compMarcar(${jsA(c.itemId)}, this.checked)"></td>
         <td><span class="fonte-chip fonte-${(it.fonte||'').replace(/[^A-Za-zÀ-ú]/g,'')}">${escH(it.fonte||'?')}</span>${itensObra.has(c.itemId)?' <span class="tag-obra" title="Está no orçamento da obra atual">obra</span>':''}</td>
         <td class="mono">${escH(it.codigo||c.itemId)}</td><td style="font-size:11.5px;">${escH((it.descricao||'(item não está mais no catálogo)').slice(0,90))}</td>
         <td class="num mono">${fmtMoney(tot)}</td><td class="num mono" style="color:var(--muted)">${fmtMoney(base)}</td>
         <td style="font-size:10.5px;color:var(--muted)">${escH(c.atualizadoPor||'')}<br>${c.atualizadoEm?new Date(c.atualizadoEm).toLocaleDateString('pt-BR'):''}</td></tr>`; }).join('') + '</tbody></table>'
     : `<div class="empty-state" style="padding:20px;">${COMP_LISTA.length ? 'Nenhuma composição com esse filtro.' : 'Nenhuma composição cadastrada ainda.'}</div>`;
   document.getElementById('compCount').textContent = `${COMP_LISTA.length}`;
+  const nSel = COMP_LISTA.filter(c=>sel.has(c.itemId)).length;
+  const info = document.getElementById('compSelInfo'); if(info) info.textContent = `${nSel} selecionada(s) de ${COMP_LISTA.length}`;
+  const bt = document.getElementById('compBtnImprimirSel'); if(bt) bt.textContent = `🖨️ Imprimir selecionadas (${nSel})`;
 
   const card = document.getElementById('compEditorCard');
   if(!COMP_ATUAL){ card.style.display = 'none'; return; }
@@ -786,6 +791,66 @@ function imprimirComposicaoUnica(){
     ${compBlocoImpressao('—', it, COMP_ATUAL.linhas, compRegime())}
     <div class="observacoes">Preços ${compRegime()==='desonerado'?'com':'sem'} desoneração. Linhas com código de catálogo acompanham a base de referência carregada no sistema.${COMP_ATUAL.observacao?'<br>'+escH(COMP_ATUAL.observacao):''}</div>
     <div class="assinatura"><div class="linha"></div>${escH(CURRENT_OBRA.responsavel||'')}<br>${escH(CURRENT_OBRA.crea||'')}</div></div>`);
+}
+/* ---------- Seleção de composições para imprimir num único documento ----------
+   A seleção fica guardada na obra (extras.compImprimir). Se a obra nunca teve seleção,
+   vêm marcadas as composições dos itens que estão no orçamento. */
+function compSelecao(){
+  const o = CURRENT_OBRA; if(!o) return new Set();
+  o.extras = o.extras || {};
+  if(!Array.isArray(o.extras.compImprimir)){
+    const naObra = new Set(o.itens.map(i=>i.itemId));
+    return new Set(COMP_LISTA.filter(c=>naObra.has(c.itemId)).map(c=>c.itemId));
+  }
+  return new Set(o.extras.compImprimir);
+}
+let _compSelTimer = null;
+function compGuardarSelecao(set){
+  CURRENT_OBRA.extras.compImprimir = Array.from(set);
+  renderComposicoes();
+  clearTimeout(_compSelTimer); _compSelTimer = setTimeout(()=>salvarObraAtual(true), 800);
+}
+function compMarcar(itemId, marcado){ const s = compSelecao(); if(marcado) s.add(itemId); else s.delete(itemId); compGuardarSelecao(s); }
+function compSelecionar(modo){
+  const s = compSelecao();
+  const f = normalizarTxt(COMP_FILTRO);
+  const filtradas = COMP_LISTA.filter(c=>!f || normalizarTxt(((c.item&&c.item.codigo)||'') + ' ' + ((c.item&&c.item.descricao)||'') + ' ' + c.itemId).includes(f));
+  if(modo === 'nenhuma') s.clear();
+  else if(modo === 'filtradas') filtradas.forEach(c=>s.add(c.itemId));
+  else if(modo === 'tirarFiltradas') filtradas.forEach(c=>s.delete(c.itemId));
+  else if(modo === 'orcamento'){ s.clear(); const naObra = new Set(CURRENT_OBRA.itens.map(i=>i.itemId)); COMP_LISTA.forEach(c=>{ if(naObra.has(c.itemId)) s.add(c.itemId); }); }
+  compGuardarSelecao(s);
+}
+// Imprime todas as composições selecionadas num único documento: índice + uma composição após a outra.
+// Itens do orçamento saem na ordem e numeração do orçamento; as demais vêm depois, por código.
+async function imprimirComposicoesSelecionadas(){
+  const o = CURRENT_OBRA; if(!o) return;
+  if(COMP_ATUAL && COMP_ATUAL.alterado && !confirm('A composição aberta tem alterações não salvas — a impressão usa a versão salva. Continuar?')) return;
+  await carregarComposicoes();
+  const sel = compSelecao(); const mapa = compMapaPorItem();
+  const lista = []; const usados = new Set();
+  gruposComItens().filter(g=>g.itens.length).forEach((g,gi)=>g.itens.forEach((it,li)=>{
+    const c = mapa[it.itemId];
+    if(c && sel.has(it.itemId) && c.linhas && c.linhas.length && !usados.has(it.itemId)){
+      usados.add(it.itemId);
+      lista.push({ numero:`${gi+1}.${li+1}`, item:{ codigo:it.codigo, descricao:it.descricao, unidade:it.unidade, fonte:it.fonte }, c });
+    }
+  }));
+  COMP_LISTA.filter(c=>sel.has(c.itemId) && !usados.has(c.itemId) && c.linhas && c.linhas.length)
+    .sort((a,b)=>String((a.item&&a.item.codigo)||a.itemId).localeCompare(String((b.item&&b.item.codigo)||b.itemId), 'pt-BR', {numeric:true}))
+    .forEach(c=>{ const it = c.item || { codigo:c.itemId, descricao:'', unidade:'' }; lista.push({ numero:'—', item:it, c }); });
+  if(!lista.length){ toast('Nenhuma composição selecionada (marque na lista da aba Composições).', true); return; }
+  const reg = o.regime;
+  const indice = `<table style="margin-bottom:16px;"><thead><tr><th style="width:52px;">Item</th><th style="width:80px;">Código</th><th>Descrição</th><th style="width:40px;">Un.</th><th style="width:100px;">Custo unit. (s/ BDI)</th></tr></thead><tbody>
+    ${lista.map(x=>`<tr><td>${escH(x.numero)}</td><td>${escH(x.item.codigo)}</td><td>${escH(x.item.descricao)}</td><td>${escH(x.item.unidade)}</td><td class="num">${fmtMoney(compTotal(x.c.linhas, reg))}</td></tr>`).join('')}
+    </tbody></table>`;
+  const blocos = lista.map(x=>`<div style="page-break-inside:avoid;break-inside:avoid;">${compBlocoImpressao(x.numero, x.item, x.c.linhas, reg)}${x.c.observacao?`<div style="font-size:10px;margin:-10px 0 14px;color:#555;">Obs.: ${escH(x.c.observacao)}</div>`:''}</div>`);
+  dispararImpressao(`<div class="doc-impressao">${cabecalhoImpressao()}<div class="faixa-titulo">Composições de Custo Unitário</div>${infoObraImpressao()}
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;margin:6px 0 4px;">Índice das composições (${lista.length})</div>
+    ${indice}
+    ${blocos.join('')}
+    <div class="observacoes">${lista.length} composição(ões) analítica(s). Custos unitários sem BDI, preços ${reg==='desonerado'?'com':'sem'} desoneração. Linhas com código de catálogo acompanham a base de referência carregada no sistema.${lista.some(x=>x.numero==='—')?' Composições marcadas com "—" não estão no orçamento desta obra.':''}</div>
+    <div class="assinatura"><div class="linha"></div>${escH(o.responsavel||'')}<br>${escH(o.crea||'')}</div></div>`);
 }
 async function imprimirComposicoesOrcamento(){
   const o = CURRENT_OBRA; if(!o || !o.itens.length){ toast('Orçamento vazio.', true); return; }

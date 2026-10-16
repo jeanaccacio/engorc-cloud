@@ -539,14 +539,21 @@
     <div class="pagina" id="pagina-composicoes">
       <div class="cartao">
         <div class="cartao-cabecalho"><h2>Composições analíticas <span class="tag" id="compCount">0</span></h2>
-          <button class="btn ghost fino" onclick="imprimirComposicoesOrcamento()">🖨️ Imprimir as do orçamento</button></div>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn amber fino" id="compBtnImprimirSel" onclick="imprimirComposicoesSelecionadas()">🖨️ Imprimir selecionadas</button></span></div>
         <div class="cartao-corpo">
           <p class="obs" style="margin-top:0;">Monte os insumos (material, mão de obra, equipamento) de qualquer serviço — SINAPI, SICRO ou item próprio. Custo unitário = Σ coeficiente × preço. As composições ficam no banco e valem para toda a equipe; linhas ligadas ao catálogo acompanham a base de preços.</p>
           <div class="campo" style="position:relative;"><label>Abrir / criar a composição de um item do catálogo</label>
             <input type="text" id="compBuscaItem" placeholder="Código ou descrição (mín. 3 letras)…" oninput="clearTimeout(window._tcb);window._tcb=setTimeout(()=>compBuscarItem('compBuscaItem','compSugItem'),200)" onblur="compEsconder('compSugItem')">
             <div class="sug-box" id="compSugItem"></div></div>
           <div class="campo"><label>Filtrar composições cadastradas</label><input type="text" placeholder="Filtrar…" oninput="COMP_FILTRO=this.value;renderComposicoes()"></div>
-          <div id="compLista" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;"></div>
+          <div id="compSelBarra" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12px;">
+            <b>Seleção para impressão:</b>
+            <button class="btn ghost fino" onclick="compSelecionar('orcamento')">As do orçamento desta obra</button>
+            <button class="btn ghost fino" onclick="compSelecionar('filtradas')">Todas as da lista</button>
+            <button class="btn ghost fino" onclick="compSelecionar('nenhuma')">Limpar</button>
+            <span class="obs" id="compSelInfo" style="margin:0;"></span></div>
+          <div id="compLista" style="max-height:420px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;"></div>
         </div>
       </div>
       <div class="cartao" id="compEditorCard" style="display:none;">
