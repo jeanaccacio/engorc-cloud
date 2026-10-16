@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS logo_base64 TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cores_impressao JSONB;
+-- perfil de acesso: 'editor' (equipe técnica), 'acompanhamento' (vê painel e marca checklist), 'visualizador' (só vê painel e checklist)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS perfil TEXT NOT NULL DEFAULT 'editor';
 
 -- Catálogo SINAPI/SINAPI-I/SICRO/Composição/Cotação — compartilhado por toda a equipe.
 CREATE TABLE IF NOT EXISTS itens (
