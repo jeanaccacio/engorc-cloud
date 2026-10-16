@@ -15,10 +15,10 @@ async function autenticar(req, res, next){
     return res.status(401).json({ erro: 'Sessão inválida ou expirada.' });
   }
   try{
-    const { rows } = await pool.query('SELECT id, nome, email, admin, ativo FROM users WHERE id = $1', [payload.id]);
+    const { rows } = await pool.query('SELECT id, nome, email, admin, ativo, perfil FROM users WHERE id = $1', [payload.id]);
     const u = rows[0];
     if(!u || !u.ativo) return res.status(401).json({ erro: 'Acesso desativado. Fale com o administrador.' });
-    req.usuario = { id: u.id, nome: u.nome, email: u.email, admin: u.admin }; // permissões sempre atualizadas
+    req.usuario = { id: u.id, nome: u.nome, email: u.email, admin: u.admin, perfil: u.admin ? 'editor' : (u.perfil || 'editor') }; // permissões sempre atualizadas
     next();
   }catch(e){
     console.error(e);
@@ -31,4 +31,15 @@ function exigirAdmin(req, res, next){
   next();
 }
 
-module.exports = { autenticar, exigirAdmin };
+// Só a equipe técnica (perfil 'editor' ou administrador) altera obras, orçamentos, valores e bases.
+function exigirEditor(req, res, next){
+  if(!req.usuario || (!req.usuario.admin && req.usuario.perfil !== 'editor')) return res.status(403).json({ erro: 'Seu acesso é somente de consulta ao painel e acompanhamento.' });
+  next();
+}
+// Pode marcar o checklist do acompanhamento: equipe técnica ou perfil 'acompanhamento'.
+function exigirChecklist(req, res, next){
+  if(!req.usuario || (!req.usuario.admin && !['editor','acompanhamento'].includes(req.usuario.perfil))) return res.status(403).json({ erro: 'Seu acesso é somente de visualização.' });
+  next();
+}
+
+module.exports = { autenticar, exigirAdmin, exigirEditor, exigirChecklist };
