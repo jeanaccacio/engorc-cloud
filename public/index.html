@@ -1641,7 +1641,7 @@ async function carregarEquipe(){
       <td>${u.nome}</td><td class="mono">${u.email}</td>
       <td><input type="checkbox" ${u.admin?'checked':''} onchange="alterarUsuario('${u.id}', {admin:this.checked})" ${u.email===USUARIO.email?'disabled':''}></td>
       <td><input type="checkbox" ${u.ativo?'checked':''} onchange="alterarUsuario('${u.id}', {ativo:this.checked})" ${u.email===USUARIO.email?'disabled':''}></td>
-      <td></td>
+      <td>${u.email===USUARIO.email ? '' : `<button class="btn danger fino" onclick="excluirUsuario('${u.id}', ${jsA(u.nome)})">Excluir</button>`}</td>
     </tr>`).join('');
   }catch(e){ toast('Erro ao carregar equipe: ' + e.message, true); }
 }
@@ -1661,10 +1661,18 @@ async function criarUsuario(){
     toast('Usuário criado — avise a pessoa da senha provisória.');
   }catch(e){ toast('Erro: ' + e.message, true); }
 }
+async function excluirUsuario(id, nome){
+  if(prompt(`Excluir de vez o acesso de "${nome}"?\nAs obras que essa pessoa criou continuam no sistema.\n\nDigite EXCLUIR para confirmar:`) !== 'EXCLUIR') return;
+  try{
+    await apiFetch('/api/auth/usuarios/' + id, { method:'DELETE' });
+    await carregarEquipe();
+    toast('Usuário excluído — o acesso foi cortado na hora.');
+  }catch(e){ toast('Erro: ' + e.message, true); }
+}
 async function alterarUsuario(id, campos){
   try{
     await apiFetch('/api/auth/usuarios/' + id, { method:'PATCH', body: JSON.stringify(campos) });
-    toast('Atualizado.');
+    toast(campos.ativo === false ? 'Acesso desativado — a pessoa sai do sistema na próxima ação.' : 'Atualizado.');
   }catch(e){ toast('Erro: ' + e.message, true); await carregarEquipe(); }
 }
 
