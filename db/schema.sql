@@ -16,6 +16,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS logo_base64 TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cores_impressao JSONB;
 -- perfil de acesso: 'editor' (equipe técnica), 'acompanhamento' (vê painel e marca checklist), 'visualizador' (só vê painel e checklist)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS perfil TEXT NOT NULL DEFAULT 'editor';
+-- senha provisória: quem recebeu uma senha criada pelo administrador precisa trocá-la no primeiro acesso
+ALTER TABLE users ADD COLUMN IF NOT EXISTS senha_provisoria BOOLEAN NOT NULL DEFAULT FALSE;
+-- senha inicial cifrada (AES-256-GCM), para o administrador consultar; apagada quando a pessoa troca a senha
+ALTER TABLE users ADD COLUMN IF NOT EXISTS senha_inicial_cifrada TEXT;
+-- versão da sessão: ao trocar/redefinir a senha, os logins antigos deixam de valer
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sessao_versao INTEGER NOT NULL DEFAULT 0;
 
 -- Catálogo SINAPI/SINAPI-I/SICRO/Composição/Cotação — compartilhado por toda a equipe.
 CREATE TABLE IF NOT EXISTS itens (
