@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { pool } = require('../../db');
 const { autenticar, exigirAdmin, exigirEditor } = require('../auth');
-const { parseSinapiBuffer } = require('../utils/parseSinapi');
+const { parseSinapiBuffer, detectarReferencia } = require('../utils/parseSinapi');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
@@ -93,12 +93,21 @@ router.get('/meta', autenticar, async (req, res) => {
   });
 });
 
+// Corrige o texto da referência de preços da base atual (admin) — é ele que vai para as obras e para o PDF.
+router.put('/meta/referencia', autenticar, exigirAdmin, async (req, res) => {
+  const ref = (req.body && typeof req.body.referencia === 'string') ? req.body.referencia.trim().slice(0, 200) : '';
+  const { rowCount } = await pool.query(`UPDATE meta_importacao SET referencia = $1 WHERE id = 'baseInfo'`, [ref || null]);
+  if(!rowCount) return res.status(404).json({ erro: 'Nenhuma base importada ainda.' });
+  res.json({ ok: true, referencia: ref || null });
+});
+
 // Importa a planilha de referência (apenas administradores) — substitui todo o catálogo.
 router.post('/importar', autenticar, exigirAdmin, upload.single('arquivo'), async (req, res) => {
   if(!req.file) return res.status(400).json({ erro: 'Envie o arquivo da planilha.' });
-  let itens;
+  let itens, cabecalho = '';
   try{
     const brutos = parseSinapiBuffer(req.file.buffer);
+    cabecalho = brutos.cabecalho || '';
     // A planilha de referência pode ter códigos repetidos (mesma fonte+código em mais de uma linha).
     // Mantém a última ocorrência de cada id, evitando erro de "ON CONFLICT" com duplicata no mesmo lote.
     const porId = new Map();
@@ -131,13 +140,16 @@ router.post('/importar', autenticar, exigirAdmin, upload.single('arquivo'), asyn
       );
     }
     const nomeArquivoCorrigido = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    // Referência de preços: a digitada pelo admin no envio, senão a detectada no cabeçalho/nome do arquivo.
+    const informada = (req.body && typeof req.body.referencia === 'string') ? req.body.referencia.trim().slice(0, 200) : '';
+    const referencia = informada || detectarReferencia(cabecalho, nomeArquivoCorrigido);
     await client.query(
-      `INSERT INTO meta_importacao (id, arquivo, total, importado_por) VALUES ('baseInfo', $1, $2, $3)
-       ON CONFLICT (id) DO UPDATE SET arquivo=EXCLUDED.arquivo, total=EXCLUDED.total, importado_em=now(), importado_por=EXCLUDED.importado_por`,
-      [nomeArquivoCorrigido, itens.length, req.usuario.nome]
+      `INSERT INTO meta_importacao (id, arquivo, total, importado_por, referencia) VALUES ('baseInfo', $1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET arquivo=EXCLUDED.arquivo, total=EXCLUDED.total, importado_em=now(), importado_por=EXCLUDED.importado_por, referencia=EXCLUDED.referencia`,
+      [nomeArquivoCorrigido, itens.length, req.usuario.nome, referencia]
     );
     await client.query('COMMIT');
-    res.json({ ok: true, total: itens.length });
+    res.json({ ok: true, total: itens.length, referencia });
   }catch(e){
     await client.query('ROLLBACK');
     console.error(e);
