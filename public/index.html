@@ -411,6 +411,12 @@
           <table><tbody>
             <tr><td style="width:180px;color:var(--muted);">Arquivo</td><td id="infoArquivo" class="mono">—</td></tr>
             <tr><td style="color:var(--muted);">Importado em</td><td id="infoImportadoEm" class="mono">—</td></tr>
+            <tr><td style="color:var(--muted);">Referência de preços</td><td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                <input type="text" id="infoReferencia" maxlength="200" placeholder="ex.: SINAPI 09/2026 – SC; SICRO 07/2026" style="flex:1;min-width:240px;">
+                <button class="btn ghost fino" id="infoReferenciaBtn" onclick="salvarReferenciaBase()">Salvar</button>
+              </div>
+              <p class="obs" style="margin:4px 0 0;">Vai para as obras novas e para o PDF do orçamento. Confira o mês/ano e a UF; corrija se precisar.</p></td></tr>
           </tbody></table>
           <div style="margin-top:14px;display:flex;gap:8px;">
             <button class="btn ghost fino" onclick="document.getElementById('fileInput').click()">Reimportar</button>
@@ -435,6 +441,8 @@
             <div class="campo"><label>Nº do processo / edital</label><input type="text" id="f_processo" oninput="salvarObraLeve()"></div>
             <div class="campo"><label>Data-base</label><input type="date" id="f_dataBase" oninput="salvarObraLeve()" onchange="CURRENT_OBRA.dataBase=this.value; recalcularOrcamentoLocal(); renderBdiPanel(); salvarObraAtual(true);"></div>
           </div>
+          <div class="campo"><label>Referência de preços (sai no PDF e no Excel do orçamento)</label>
+            <input type="text" id="f_refPrecos" maxlength="200" oninput="salvarObraLeve()" placeholder="ex.: SINAPI 09/2026 – SC (preenchido sozinho ao adicionar itens da base)"></div>
           <div class="linha-dupla">
             <div class="campo"><label>Convênio / fonte de recurso</label>
               <select id="f_convenio" onchange="salvarObraLeve()">
@@ -526,8 +534,11 @@
 
       <div class="cartao">
         <div class="cartao-cabecalho"><h2>Planilha orçamentária <span class="tag" id="orcCountTag">0 itens</span></h2>
-          <button class="btn ghost fino" onclick="imprimirOrcamento()">🖨️ Imprimir</button>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn ghost fino so-editor" onclick="atualizarPrecosPelaBase()" title="Troca os preços dos itens desta obra pelos da base SINAPI carregada agora">↻ Atualizar preços pela base</button>
+            <button class="btn ghost fino" onclick="imprimirOrcamento()">🖨️ Imprimir</button></span>
         </div>
+        <div id="orcRefInfo" style="padding:8px 16px 0;font-size:12px;color:var(--muted);"></div>
         <div class="cartao-corpo">
           <div style="overflow-x:auto;">
             <table id="orcTable">
@@ -992,9 +1003,27 @@ async function removerMinhaLogo(){
 }
 
 /* ---------------------- 4. BASE DE DADOS (catálogo compartilhado) ---------------------- */
+let BASE_META = null;   // base de referência carregada no servidor (arquivo, data, referência de preços)
+// Texto da referência de preços da base atual — o que vai para a obra e para o PDF.
+function referenciaBaseAtual(){
+  const im = BASE_META && BASE_META.importacao;
+  if(!im) return '';
+  if(im.referencia) return im.referencia;
+  const data = im.importado_em ? new Date(im.importado_em).toLocaleDateString('pt-BR') : '';
+  return `Planilha de referência "${im.arquivo}"${data ? ' (importada em ' + data + ')' : ''}`;
+}
+async function salvarReferenciaBase(){
+  try{
+    const v = document.getElementById('infoReferencia').value.trim();
+    await apiFetch('/api/itens/meta/referencia', { method:'PUT', body: JSON.stringify({ referencia: v }) });
+    await carregarBaseMeta();
+    toast('Referência da base salva. Vale para os itens adicionados daqui em diante e para "Atualizar preços pela base".');
+  }catch(e){ toast('Erro: ' + e.message, true); }
+}
 async function carregarBaseMeta(){
   try{
     const meta = await apiFetch('/api/itens/meta');
+    BASE_META = meta;
     document.getElementById('statusBase').textContent = meta.total ? `Base: ${meta.total.toLocaleString('pt-BR')} itens` : 'Base: não importada';
     if(meta.total === 0){
       document.getElementById('baseStats').style.display = 'none';
@@ -1011,6 +1040,10 @@ async function carregarBaseMeta(){
       document.getElementById('baseInfoCard').style.display = 'block';
       document.getElementById('infoArquivo').textContent = meta.importacao.arquivo || '—';
       document.getElementById('infoImportadoEm').textContent = meta.importacao.importado_em ? new Date(meta.importacao.importado_em).toLocaleString('pt-BR') : '—';
+      const ref = document.getElementById('infoReferencia');
+      ref.value = meta.importacao.referencia || '';
+      const podeEditarRef = !!(USUARIO && USUARIO.admin);
+      ref.disabled = !podeEditarRef; document.getElementById('infoReferenciaBtn').style.display = podeEditarRef ? '' : 'none';
     }
   }catch(e){ console.error(e); }
 }
@@ -1023,7 +1056,8 @@ function processarArquivoBase(file){
   apiFetch('/api/itens/importar', { method:'POST', body: formData })
     .then(r => {
       document.getElementById('importProgress').style.display = 'none';
-      toast(`Base importada: ${r.total.toLocaleString('pt-BR')} itens.`);
+      toast(r.referencia ? `Base importada: ${r.total.toLocaleString('pt-BR')} itens — referência detectada: ${r.referencia}. Confira em "Referência de preços".`
+                         : `Base importada: ${r.total.toLocaleString('pt-BR')} itens. Informe a referência (mês/ano, UF) em "Referência de preços".`);
       carregarBaseMeta();
     })
     .catch(e => {
@@ -1104,6 +1138,7 @@ function capturarCamposObraDaTela(){
     o.extras = o.extras || {};
     o.extras.convenio = document.getElementById('f_convenio').value;
     o.extras.convenioOutro = document.getElementById('f_convenioOutro').value.trim();
+    o.extras.referenciaPrecos = document.getElementById('f_refPrecos').value.trim();
   }
   calcularBDI();
 }
@@ -1195,6 +1230,7 @@ function preencherFormObra(){
   document.getElementById('f_dataBase').value = o.dataBase || '';
   document.getElementById('f_convenio').value = (o.extras && o.extras.convenio) || '';
   document.getElementById('f_convenioOutro').value = (o.extras && o.extras.convenioOutro) || '';
+  document.getElementById('f_refPrecos').value = (o.extras && o.extras.referenciaPrecos) || '';
 }
 // Salva os dados gerais enquanto o usuário digita (sem toast, com espera de 0,8 s).
 let _timerObraLeve = null;
@@ -1329,11 +1365,101 @@ async function adicionarItemOrcamento(itemId){
     custoDesoneradoBase:item.custoDesonerado, custoNaoDesoneradoBase:item.custoNaoDesonerado,
     custoOriginal:base, manual:false,
     custoUnitario:base*fatorDesconto(), custoComBDI:base*fatorDesconto()*(1+bdi), quantidade:1, custoTotal:base*fatorDesconto()*(1+bdi),
-    grupo: o.grupoAtivo || o.grupos[0]
+    grupo: o.grupoAtivo || o.grupos[0], baseRef: referenciaBaseAtual()
   });
+  registrarReferenciaNaObra(o);
   renderOrcamento(); renderCronograma();
   await salvarObraAtual();
   toast('Item adicionado.');
+}
+
+/* ---------- Referência de preços da obra (SINAPI mês/ano, UF…) ---------- */
+function registrarReferenciaNaObra(o){
+  o.extras = o.extras || {};
+  if(!o.extras.referenciaPrecos && referenciaBaseAtual()){
+    o.extras.referenciaPrecos = referenciaBaseAtual();
+    const el = document.getElementById('f_refPrecos'); if(el) el.value = o.extras.referenciaPrecos;
+  }
+}
+function textoReferenciaPrecos(o){
+  return (o.extras && o.extras.referenciaPrecos) || 'SINAPI/SICRO conforme planilha de referência carregada no sistema (não informada na obra)';
+}
+// Referências distintas gravadas nos itens (itens antigos, sem referência gravada, não contam).
+function referenciasDosItens(o){
+  return Array.from(new Set(o.itens.filter(i=>i.baseRef && !i.manual).map(i=>i.baseRef)));
+}
+function renderReferenciaOrcamento(){
+  const el = document.getElementById('orcRefInfo'); if(!el || !CURRENT_OBRA) return;
+  const o = CURRENT_OBRA; const refs = referenciasDosItens(o);
+  const atual = referenciaBaseAtual();
+  let txt = `Referência de preços: <b>${escH(textoReferenciaPrecos(o))}</b>`;
+  if(refs.length > 1) txt += ` <span style="color:var(--red);">— itens de ${refs.length} bases diferentes (${refs.map(escH).join('; ')})</span>`;
+  else if(atual && o.extras && o.extras.referenciaPrecos && o.extras.referenciaPrecos !== atual && o.itens.length) txt += ` <span class="obs">· base carregada agora: ${escH(atual)}</span>`;
+  el.innerHTML = txt;
+}
+
+// Reprecifica a obra pela base carregada agora. Mostra um resumo antes e só aplica se confirmar.
+// Itens com preço digitado à mão só mudam se o usuário pedir; itens não encontrados ou com unidade diferente ficam como estão.
+async function atualizarPrecosPelaBase(){
+  const o = CURRENT_OBRA;
+  if(!o || !o.itens.length){ toast('O orçamento está vazio.', true); return; }
+  await carregarBaseMeta();
+  const ref = referenciaBaseAtual();
+  if(!ref){ toast('Nenhuma base de referência importada.', true); return; }
+  const ids = Array.from(new Set(o.itens.map(i=>i.itemId).filter(Boolean)));
+  const mapa = {};
+  for(let i = 0; i < ids.length; i += 1500){
+    const r = await apiFetch('/api/itens/por-ids', { method:'POST', body: JSON.stringify({ ids: ids.slice(i, i+1500) }) });
+    r.itens.forEach(c=>{ mapa[c.id] = c; });
+  }
+  const normU = u => String(u||'').trim().toUpperCase().replace(/\s+/g,'').replace('²','2').replace('³','3');
+  const plano = [], naoAchados = [], unidade = [], manuaisNaBase = [];
+  o.itens.forEach(it=>{
+    const cat = mapa[it.itemId];
+    if(!cat){ naoAchados.push(it); return; }
+    if(it.unidade && cat.unidade && normU(it.unidade) !== normU(cat.unidade)){ unidade.push(`${it.codigo} (${it.unidade} → ${cat.unidade})`); return; }
+    if(it.manual) manuaisNaBase.push({ it, cat }); else plano.push({ it, cat });
+  });
+  let incluirManuais = false;
+  if(manuaisNaBase.length){
+    incluirManuais = confirm(`${manuaisNaBase.length} item(ns) desta obra estão com preço digitado à mão (ou vieram de importação).\n\nOK = trocar também o preço deles pelo da base\nCancelar = manter os preços digitados`);
+  }
+  const aplicar = plano.concat(incluirManuais ? manuaisNaBase : []);
+  const totalAntes = o.itens.reduce((s,i)=>s+(i.custoTotal||0),0);
+  let sobem = 0, descem = 0, iguais = 0, totalDepois = totalAntes;
+  aplicar.forEach(({it, cat})=>{
+    const sim = { ...it, manual:false, custoDesoneradoBase: cat.custoDesonerado, custoNaoDesoneradoBase: cat.custoNaoDesonerado };
+    recalcItem(sim);
+    const d = sim.custoOriginal - (it.custoOriginal||0);
+    if(d > 0.005) sobem++; else if(d < -0.005) descem++; else iguais++;
+    totalDepois += sim.custoTotal - (it.custoTotal||0);
+  });
+  const varPct = totalAntes ? (totalDepois/totalAntes - 1) * 100 : 0;
+  const lista = (arr, n=12) => arr.slice(0,n).join(', ') + (arr.length>n ? ` e mais ${arr.length-n}` : '');
+  const msg = `Atualizar os preços desta obra pela base carregada agora?\n\n`
+    + `Base: ${ref}\nRegime: ${o.regime==='desonerado'?'desonerado':'não desonerado'}\n\n`
+    + `Itens com preço novo: ${sobem + descem} (${sobem} sobem, ${descem} descem)\n`
+    + `Sem mudança de preço: ${iguais}\n`
+    + (manuaisNaBase.length && !incluirManuais ? `Mantidos com preço digitado: ${manuaisNaBase.length}\n` : '')
+    + (naoAchados.length ? `Não encontrados na base (mantêm o preço antigo): ${naoAchados.length} — ${lista(naoAchados.map(i=>i.codigo))}\n` : '')
+    + (unidade.length ? `Unidade diferente na base (NÃO atualizados, confira): ${unidade.length} — ${lista(unidade, 6)}\n` : '')
+    + `\nTotal da obra: ${fmtMoney(totalAntes)} → ${fmtMoney(totalDepois)} (${varPct>=0?'+':''}${varPct.toFixed(2).replace('.',',')}%)`;
+  if(!confirm(msg)) return;
+  aplicar.forEach(({it, cat})=>{
+    it.manual = false;
+    it.custoDesoneradoBase = cat.custoDesonerado; it.custoNaoDesoneradoBase = cat.custoNaoDesonerado;
+    if(!it.orig){ it.descricao = cat.descricao; }   // descrição adaptada na obra é mantida
+    it.baseRef = ref;
+    recalcItem(it);
+  });
+  o.extras = o.extras || {};
+  o.extras.referenciaPrecos = ref;
+  o.extras.historicoPrecos = (o.extras.historicoPrecos || []).concat([{ em: new Date().toISOString(), referencia: ref, totalAntes, totalDepois, itens: aplicar.length, por: USUARIO.nome }]).slice(-20);
+  if(typeof PAV_CAT !== 'undefined') PAV_CAT = null;   // motor de pavimentação passa a usar a base nova
+  const el = document.getElementById('f_refPrecos'); if(el) el.value = ref;
+  renderOrcamento(); renderCronograma();
+  await salvarObraAtual(true);
+  toast(`Preços atualizados: ${aplicar.length} item(ns). Confira a Data-base na aba Obra.`);
 }
 
 function gruposComItens(){
@@ -1343,6 +1469,7 @@ function gruposComItens(){
 
 function renderOrcamento(){
   const o = CURRENT_OBRA;
+  renderReferenciaOrcamento();
   document.getElementById('orcCountTag').textContent = `${o.itens.length} ${o.itens.length===1?'item':'itens'}`;
   popularGrupoAtivoSelect();
   const body = document.getElementById('orcBody');
@@ -1538,10 +1665,14 @@ function imprimirOrcamento(){
     });
     resumoLinhas.push(`<tr><td>${gIdx+1}</td><td>${grp.nome}</td><td class="num">${fmtPct(subtotal/(totalGeral||1))}</td><td class="num">${fmtMoney(subtotal)}</td></tr>`);
   });
+  const refPrecos = textoReferenciaPrecos(o);
+  const mistas = referenciasDosItens(o);
+  if(mistas.length > 1) toast(`Atenção: este orçamento tem itens de ${mistas.length} bases diferentes. Use "Atualizar preços pela base" para unificar antes de entregar.`, true);
   const html = `<div class="doc-impressao">
     ${cabecalhoImpressao()}
     <div class="faixa-titulo">Orçamento</div>
     ${infoObraImpressao()}
+    <div style="font-size:10.5px;margin:4px 0 8px;"><b>Referência de preços:</b> ${escH(refPrecos)} — ${o.regime==='desonerado'?'com':'sem'} desoneração${o.dataBase ? ' &nbsp;|&nbsp; <b>Data-base:</b> ' + new Date(o.dataBase + 'T12:00:00').toLocaleDateString('pt-BR') : ''}</div>
     ${descPct>0?`<div style="border:1px solid #C98A12;background:#FFF6DC;padding:5px 8px;font-size:10px;margin:6px 0;"><b>Desconto de ${descPct.toLocaleString('pt-BR')}%</b> aplicado sobre o preço unitário de todos os itens (antes do BDI). Preços originais riscados.</div>`:''}
     <table>
       <thead><tr><th>Item</th><th>Descrição</th><th>Índice</th><th>Código</th><th>Qtd.</th><th>Un.</th>
@@ -1555,7 +1686,7 @@ function imprimirOrcamento(){
     </div>
     <div class="observacoes">
       OBSERVAÇÕES:<br>
-      1) Base de referência SINAPI/SICRO ${o.regime==='desonerado'?'com':'sem'} desoneração, conforme catálogo carregado no sistema.<br>
+      1) Preços de referência: ${escH(refPrecos)}, ${o.regime==='desonerado'?'com':'sem'} desoneração.<br>
       2) Itens marcados como "Composição" ou "Cotação" são de responsabilidade própria da entidade orçamentista.<br>
       3) BDI aplicado: ${o.bdi.lista.length>1 ? o.bdi.lista.map((b,i)=>`${BDI_NOMES[i]} ${fmtPct(b.final)} (${bdiTipoInfo(b.tipo).label})`).join('; ') + ' — conforme indicado em cada grupo' : fmtPct(o.bdi.final||0)}.${descPct>0?`<br>
       4) Desconto de ${descPct.toLocaleString('pt-BR')}% aplicado ao preço unitário de cada item, antes da incidência do BDI.`:''}${o.itens.some(i=>i.manual)?`<br>
@@ -1622,6 +1753,7 @@ function exportarXlsx(){
     [`Órgão: ${o.orgao||''}    Município: ${o.municipio||''}    Processo: ${o.processo||''}`],
     [`Responsável técnico: ${o.responsavel||''}    ${o.crea||''}`],
     [`Regime: ${o.regime==='desonerado'?'Desonerado':'Não desonerado'}    Data-base: ${o.dataBase||''}    BDI: ${bdiResumoTexto(o)}`],
+    [`Referência de preços: ${textoReferenciaPrecos(o)}`],
     [], header, ...rows, [],
     ["", "", "", "", "", "", "", "", "", "", "", "TOTAL GERAL", Number(totalGeral.toFixed(2))]
   ];

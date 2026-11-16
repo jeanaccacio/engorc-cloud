@@ -272,7 +272,7 @@ function pavItemNovo(codigo, grupo){
     unidade: cat ? cat.unidade : '',
     custoDesoneradoBase: cat ? cat.custoDesonerado : 0, custoNaoDesoneradoBase: cat ? cat.custoNaoDesonerado : 0,
     custoOriginal: base, manual:false, custoUnitario: base, custoComBDI: base, quantidade: 0, custoTotal: 0,
-    grupo, auto:true
+    grupo, auto:true, baseRef: cat ? referenciaBaseAtual() : ''
   };
 }
 
@@ -299,7 +299,7 @@ function pavSincronizar(){
   Object.values(ag).forEach(a=>{
     gruposUsados.add(a.grupo);
     let it = o.itens.find(i=>i.auto && i.motorChave===a.chave);
-    if(!it){ it = pavItemNovo(a.codigo, a.grupo); it.motorChave = a.chave; o.itens.push(it); }
+    if(!it){ it = pavItemNovo(a.codigo, a.grupo); it.motorChave = a.chave; o.itens.push(it); if(it.baseRef) registrarReferenciaNaObra(o); }
     it.grupo = a.grupo;
     it.quantidadeAuto = arred(a.qtd, 4);
     it.origens = Array.from(a.origens).join(', ');
