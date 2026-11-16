@@ -50,7 +50,33 @@ function parseSinapiBuffer(buffer){
     });
   }
   if(itens.length === 0) throw new Error('Nenhum item foi lido. Confira o arquivo.');
+  // Texto das linhas acima do cabeçalho (título, data-base, UF…) — usado para detectar a referência de preços.
+  itens.cabecalho = rows.slice(0, headerRowIdx).map(row => (row || []).filter(c => c != null && String(c).trim() !== '').join(' ')).filter(Boolean).join(' | ');
   return itens;
 }
 
-module.exports = { parseSinapiBuffer };
+// Tenta descobrir a referência de preços (mês/ano da SINAPI e UF) no cabeçalho da planilha ou no nome do arquivo.
+// Devolve, por exemplo, "SINAPI 09/2026 – SC", ou null se não achar nada confiável.
+const MESES = { jan:1, fev:2, mar:3, abr:4, mai:5, jun:6, jul:7, ago:8, set:9, out:10, nov:11, dez:12 };
+const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+function detectarReferencia(textoCabecalho, nomeArquivo){
+  const fontes = [String(textoCabecalho || ''), String(nomeArquivo || '').replace(/\.[a-z0-9]+$/i, '')];
+  let mes = null, ano = null, uf = null;
+  for(const t of fontes){
+    if(mes) break;
+    let m = t.match(/(?<!\d)(0?[1-9]|1[0-2])\s*[\/\-_.]\s*(20\d{2})(?!\d)/);
+    if(m){ mes = +m[1]; ano = +m[2]; break; }
+    m = t.match(/(?<!\d)(20\d{2})\s*[\/\-_.]\s*(0[1-9]|1[0-2])(?!\d)/);
+    if(m){ mes = +m[2]; ano = +m[1]; break; }
+    m = t.toLowerCase().match(/(?<![a-z])(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç]*\.?\s*(?:de\s*)?[\/\-_ ]?\s*(20\d{2})(?!\d)/);
+    if(m){ mes = MESES[m[1]]; ano = +m[2]; break; }
+  }
+  for(const t of fontes){
+    const m = t.match(/\b(?:UF|ESTADO|LOCALIDADE)\s*[:\-]?\s*([A-Z]{2})\b/) || t.match(/SINAPI[^|]{0,40}?[\s_\-]([A-Z]{2})(?:[\s_\-.|]|$)/);
+    if(m && UFS.includes(m[1])){ uf = m[1]; break; }
+  }
+  if(!mes) return null;
+  return `SINAPI ${String(mes).padStart(2,'0')}/${ano}` + (uf ? ` – ${uf}` : '');
+}
+
+module.exports = { parseSinapiBuffer, detectarReferencia };
