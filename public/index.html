@@ -283,6 +283,20 @@
 </head>
 <body>
 
+  <div id="senhaOverlay" style="display:none;position:fixed;inset:0;background:var(--ink);align-items:center;justify-content:center;z-index:2100;padding:20px;">
+    <div style="background:var(--paper);border-radius:10px;padding:30px 28px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4);">
+      <div style="font-family:var(--disp);font-weight:700;font-size:20px;color:var(--ink);margin-bottom:6px;" id="senhaTitulo">Crie sua senha</div>
+      <p class="obs" id="senhaIntro" style="margin-top:0;"></p>
+      <div class="campo"><label>Senha atual</label><input type="password" id="modalSenhaAtual" autocomplete="current-password"></div>
+      <div class="campo"><label>Nova senha (mín. 6 caracteres)</label><input type="password" id="modalSenhaNova" autocomplete="new-password"></div>
+      <div class="campo"><label>Confirme a nova senha</label><input type="password" id="modalSenhaConfirma" autocomplete="new-password" onkeydown="if(event.key==='Enter') confirmarTrocaSenhaModal();"></div>
+      <div id="modalSenhaErro" style="color:var(--red);font-size:12.5px;margin-bottom:10px;display:none;"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn amber" style="flex:1;justify-content:center;" onclick="confirmarTrocaSenhaModal()">Salvar nova senha</button>
+        <button class="btn ghost" id="modalSenhaCancelar" onclick="fecharTrocaSenha()">Cancelar</button>
+      </div>
+    </div>
+  </div>
   <div id="loginOverlay" style="position:fixed;inset:0;background:var(--ink);display:flex;align-items:center;justify-content:center;z-index:2000;padding:20px;">
     <div style="background:var(--paper);border-radius:10px;padding:32px 30px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4);">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
@@ -630,6 +644,21 @@
 
     <!-- ===================== MINHA CONTA ===================== -->
     <div class="pagina" id="pagina-conta">
+      <div class="cartao cartao-sempre">
+        <div class="cartao-cabecalho"><h2>Alterar minha senha</h2></div>
+        <div class="cartao-corpo">
+          <p class="obs" style="margin-top:0;">Você pode trocar sua senha quando quiser. Para trocar, informe a senha atual.</p>
+          <div class="linha-tripla">
+            <div class="campo"><label>Senha atual</label><input type="password" id="contaSenhaAtual" autocomplete="current-password"></div>
+            <div class="campo"><label>Nova senha (mín. 6 caracteres)</label><input type="password" id="contaSenhaNova" autocomplete="new-password"></div>
+            <div class="campo"><label>Confirme a nova senha</label><input type="password" id="contaSenhaConfirma" autocomplete="new-password"></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <button class="btn amber fino" onclick="trocarMinhaSenha()">Alterar senha</button>
+            <span id="contaSenhaMsg" class="obs" style="margin:0;"></span>
+          </div>
+        </div>
+      </div>
       <div class="cartao">
         <div class="cartao-cabecalho"><h2>Logo de impressão</h2></div>
         <div class="cartao-corpo">
@@ -666,7 +695,8 @@
           <div class="linha-tripla">
             <div class="campo"><label>Nome</label><input type="text" id="eq_nome"></div>
             <div class="campo"><label>E-mail</label><input type="email" id="eq_email"></div>
-            <div class="campo"><label>Senha provisória</label><input type="text" id="eq_senha"></div>
+            <div class="campo"><label>Senha provisória</label><div style="display:flex;gap:6px;"><input type="text" id="eq_senha" style="flex:1;"><button class="btn ghost fino" type="button" onclick="document.getElementById('eq_senha').value=gerarSenhaTela()">Gerar</button></div>
+              <p class="obs">A pessoa entra com ela e é obrigada a criar a sua senha no primeiro acesso.</p></div>
           </div>
           <div class="linha-tripla">
             <div class="campo"><label>Tipo de acesso</label><select id="eq_perfil">
@@ -682,7 +712,7 @@
       <div class="cartao">
         <div class="cartao-cabecalho"><h2>Pessoas com acesso</h2></div>
         <div class="cartao-corpo">
-          <div style="overflow-x:auto;"><table id="equipeTable"><thead><tr><th>Nome</th><th>E-mail</th><th>Acesso</th><th>Admin</th><th>Ativo</th><th></th></tr></thead><tbody id="equipeBody"></tbody></table></div>
+          <div style="overflow-x:auto;"><table id="equipeTable"><thead><tr><th>Nome</th><th>E-mail</th><th>Acesso</th><th>Admin</th><th>Ativo</th><th>Senha</th><th></th></tr></thead><tbody id="equipeBody"></tbody></table></div>
         </div>
       </div>
     </div>
@@ -744,6 +774,10 @@ async function apiFetch(caminho, opcoes){
   if(!(opcoes.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   if(TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
   const resp = await fetch(API_BASE + caminho, { ...opcoes, headers });
+  if(resp.status === 403){
+    const d = await resp.clone().json().catch(()=>null);
+    if(d && d.codigo === 'trocar_senha'){ mostrarTrocarSenha(true); throw new Error(d.erro); }
+  }
   if(resp.status === 401){
     localStorage.removeItem('engorc_token');
     TOKEN = null;
@@ -782,10 +816,52 @@ async function fazerLogin(){
     TOKEN = dados.token; USUARIO = dados.usuario;
     localStorage.setItem('engorc_token', TOKEN);
     esconderLogin();
+    if(USUARIO.senhaProvisoria){ mostrarTrocarSenha(true); return; }
     await iniciarApp();
   }catch(e){
     erroEl.textContent = e.message; erroEl.style.display = 'block';
   }
+}
+function mostrarTrocarSenha(obrigatoria, mensagem){
+  document.getElementById('senhaOverlay').style.display = 'flex';
+  document.getElementById('senhaTitulo').textContent = obrigatoria ? 'Crie sua senha' : 'Alterar senha';
+  document.getElementById('senhaIntro').textContent = obrigatoria
+    ? 'Esta é a sua primeira entrada. Digite a senha provisória que o administrador lhe passou e escolha a sua. Você poderá trocá-la quando quiser, em Minha Conta.'
+    : (mensagem || 'Informe a senha atual e a nova senha.');
+  document.getElementById('modalSenhaCancelar').style.display = obrigatoria ? 'none' : '';
+  ['modalSenhaAtual','modalSenhaNova','modalSenhaConfirma'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('modalSenhaErro').style.display = 'none';
+  setTimeout(()=>document.getElementById('modalSenhaAtual').focus(), 50);
+}
+function fecharTrocaSenha(){ document.getElementById('senhaOverlay').style.display = 'none'; }
+async function enviarTrocaSenha(atual, nova, confirma){
+  if(!atual || !nova) throw new Error('Preencha a senha atual e a nova senha.');
+  if(nova.length < 6) throw new Error('A nova senha precisa ter pelo menos 6 caracteres.');
+  if(nova !== confirma) throw new Error('A confirmação não confere com a nova senha.');
+  const r = await apiFetch('/api/auth/senha', { method:'PUT', body: JSON.stringify({ senhaAtual: atual, novaSenha: nova }) });
+  TOKEN = r.token; localStorage.setItem('engorc_token', TOKEN);
+  USUARIO.senhaProvisoria = false;
+  return r;
+}
+async function confirmarTrocaSenhaModal(){
+  const erro = document.getElementById('modalSenhaErro');
+  erro.style.display = 'none';
+  try{
+    await enviarTrocaSenha(document.getElementById('modalSenhaAtual').value, document.getElementById('modalSenhaNova').value, document.getElementById('modalSenhaConfirma').value);
+    fecharTrocaSenha();
+    toast('Senha criada com sucesso.');
+    if(!APP_INICIADO) await iniciarApp();
+  }catch(e){ erro.textContent = e.message; erro.style.display = 'block'; }
+}
+async function trocarMinhaSenha(){
+  const msg = document.getElementById('contaSenhaMsg');
+  msg.textContent = '';
+  try{
+    await enviarTrocaSenha(document.getElementById('contaSenhaAtual').value, document.getElementById('contaSenhaNova').value, document.getElementById('contaSenhaConfirma').value);
+    ['contaSenhaAtual','contaSenhaNova','contaSenhaConfirma'].forEach(id=>document.getElementById(id).value='');
+    toast('Senha alterada.');
+    msg.textContent = 'Senha alterada com sucesso.';
+  }catch(e){ msg.textContent = e.message; msg.style.color = 'var(--red)'; }
 }
 function sair(){
   localStorage.removeItem('engorc_token');
@@ -837,6 +913,7 @@ async function init(){
       const r = await apiFetch('/api/auth/me');
       USUARIO = r.usuario;
       esconderLogin();
+      if(USUARIO.senhaProvisoria){ mostrarTrocarSenha(true); return; }
       await iniciarApp();
       return;
     }catch(e){ /* token inválido — cai para tela de login */ }
@@ -844,7 +921,9 @@ async function init(){
   mostrarLogin();
 }
 
+let APP_INICIADO = false;
 async function iniciarApp(){
+  APP_INICIADO = true;
   document.getElementById('usuarioLogado').textContent = USUARIO.nome + (USUARIO.admin ? ' (admin)' : (perfilUsuario() !== 'editor' ? ' (' + PERFIS_LABEL[perfilUsuario()].toLowerCase() + ')' : ''));
   aplicarPerfilNaTela();
   if(USUARIO.admin){
@@ -1564,6 +1643,10 @@ async function carregarEquipe(){
       <td><select class="grupo-select-inline" onchange="alterarUsuario('${u.id}', {perfil:this.value})" ${u.admin||u.email===USUARIO.email?'disabled title="Administrador sempre tem acesso completo"':''}>${Object.keys(PERFIS_LABEL).map(p=>`<option value="${p}" ${(u.admin?'editor':(u.perfil||'editor'))===p?'selected':''}>${PERFIS_LABEL[p]}</option>`).join('')}</select></td>
       <td><input type="checkbox" ${u.admin?'checked':''} onchange="alterarUsuario('${u.id}', {admin:this.checked}).then(carregarEquipe)" ${u.email===USUARIO.email?'disabled':''}></td>
       <td><input type="checkbox" ${u.ativo?'checked':''} onchange="alterarUsuario('${u.id}', {ativo:this.checked})" ${u.email===USUARIO.email?'disabled':''}></td>
+      <td style="white-space:nowrap;">${u.email===USUARIO.email ? '<span class="obs">—</span>' : `
+        ${u.senha_inicial_disponivel ? `<button class="btn ghost fino" onclick="verSenhaInicial('${u.id}', ${jsA(u.nome)})">Ver senha inicial</button>` : `<span class="obs">${u.senha_provisoria ? '' : 'trocada pela pessoa'}</span>`}
+        <button class="btn ghost fino" onclick="redefinirSenhaUsuario('${u.id}', ${jsA(u.nome)})">Redefinir</button>
+        ${u.senha_provisoria ? '<div><span class="tag">aguardando 1º acesso</span></div>' : ''}`}</td>
       <td>${u.email===USUARIO.email ? '' : `<button class="btn danger fino" onclick="excluirUsuario('${u.id}', ${jsA(u.nome)})">Excluir</button>`}</td>
     </tr>`).join('');
   }catch(e){ toast('Erro ao carregar equipe: ' + e.message, true); }
@@ -1584,6 +1667,27 @@ async function criarUsuario(){
     document.getElementById('eq_perfil').value = 'editor'; document.getElementById('eq_perfil').disabled = false;
     await carregarEquipe();
     toast('Usuário criado — avise a pessoa da senha provisória.');
+  }catch(e){ toast('Erro: ' + e.message, true); }
+}
+function gerarSenhaTela(tamanho = 10){
+  const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const v = new Uint32Array(tamanho); crypto.getRandomValues(v);
+  return Array.from(v, x => alfabeto[x % alfabeto.length]).join('');
+}
+async function verSenhaInicial(id, nome){
+  try{
+    const r = await apiFetch('/api/auth/usuarios/' + id + '/senha-inicial');
+    alert(`Senha inicial de ${r.nome}:\n\n${r.senha}\n\nA pessoa deve criar a própria senha no primeiro acesso.`);
+  }catch(e){ toast(e.message, true); }
+}
+async function redefinirSenhaUsuario(id, nome){
+  const nova = prompt(`Nova senha provisória para ${nome} (mín. 6 caracteres).\nA pessoa vai criar outra no próximo acesso e os logins atuais dela serão encerrados.`, gerarSenhaTela());
+  if(nova === null) return;
+  if(nova.trim().length < 6){ toast('A senha precisa ter pelo menos 6 caracteres.', true); return; }
+  try{
+    await apiFetch('/api/auth/usuarios/' + id + '/redefinir-senha', { method:'POST', body: JSON.stringify({ novaSenha: nova.trim() }) });
+    await carregarEquipe();
+    alert(`Senha provisória de ${nome}:\n\n${nova.trim()}`);
   }catch(e){ toast('Erro: ' + e.message, true); }
 }
 async function excluirUsuario(id, nome){

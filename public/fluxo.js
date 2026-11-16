@@ -142,7 +142,7 @@ function aplicarPerfilNaTela(){
   });
   // Minha Conta: perfis restritos não imprimem, então logo/cores não interessam
   const conta = document.getElementById('pagina-conta');
-  if(conta) conta.querySelectorAll('.cartao').forEach(c=>{ c.style.display = restrito ? 'none' : ''; });
+  if(conta) conta.querySelectorAll('.cartao:not(.cartao-sempre)').forEach(c=>{ c.style.display = restrito ? 'none' : ''; });
   const av = document.getElementById('contaRestritoAviso'); if(av) av.remove();
   if(restrito && conta){
     conta.insertAdjacentHTML('afterbegin', `<div class="cartao" id="contaRestritoAviso" style="display:block !important;"><div class="cartao-corpo"><b>Seu acesso: ${escH(PERFIS_LABEL[perfilUsuario()])}.</b>
