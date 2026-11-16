@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS meta_importacao (
   importado_em   TIMESTAMPTZ NOT NULL DEFAULT now(),
   importado_por  TEXT
 );
+-- texto da referência de preços da base (ex.: "SINAPI 09/2026 – SC"), detectado na importação e editável pelo admin
+ALTER TABLE meta_importacao ADD COLUMN IF NOT EXISTS referencia TEXT;
 
 CREATE TABLE IF NOT EXISTS obras (
   id             TEXT PRIMARY KEY,
